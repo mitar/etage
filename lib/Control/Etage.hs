@@ -75,7 +75,10 @@ class Neuron n where
 
   grow = return undefined
   dissolve _ = return ()
-  attach nerve = ((liftM mkLiveNeuron) . forkIO $ bracket (grow :: IO n) dissolve (live nerve)) :: IO (LiveNeuron n)
+  attach nerve = do
+    currentThread <- myThreadId
+    ((liftM mkLiveNeuron) . forkIO $ handle (throwTo currentThread :: SomeException -> IO ()) $
+      bracket (grow :: IO n) dissolve (live nerve)) :: IO (LiveNeuron n)
   deattach = killThread . getNeuronId
 
 data (Show a, Typeable a) => DissolvingException a = DissolvingException a deriving (Show, Typeable)
