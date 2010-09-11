@@ -10,7 +10,7 @@ import Data.Typeable
 import Numeric
 import Text.ParserCombinators.ReadP
 
-class (Show a) => Impulse a
+class Show a => Impulse a
 
 data AnyImpulse :: * where
   AnyImpulse :: Impulse i => i -> AnyImpulse
