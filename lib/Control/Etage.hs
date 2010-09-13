@@ -38,14 +38,14 @@ getFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO (Maybe i')
 getFromNeuron (Nerve (Axon chan) _) = maybeReadChan chan
 getFromNeuron (Nerve (AxonAny chan) _) = maybeReadChan chan
 
-sendToNeuron :: Impulse i => Nerve a a' b (Chan i) i' AxonConductive -> i -> IO ()
-sendToNeuron (Nerve _ (Axon chan)) i = writeChan chan i
-sendToNeuron (Nerve _ (AxonAny chan)) i = writeChan chan $ AnyImpulse i
+sendForNeuron :: Impulse i => Nerve a a' b (Chan i) i' AxonConductive -> i -> IO ()
+sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
+sendForNeuron (Nerve _ (AxonAny chan)) i = writeChan chan $ AnyImpulse i
 
-getToNeuron :: Nerve a a' b (Chan i) i' d -> IO (Maybe i')
-getToNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
-getToNeuron (Nerve _ (AxonAny chan)) = maybeReadChan chan
-getToNeuron (Nerve _ NoAxon) = return Nothing -- we allow getting but return Nothing so that same Neuron defintion can be used on all kinds of Nerves
+getForNeuron :: Nerve a a' b (Chan i) i' d -> IO (Maybe i')
+getForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
+getForNeuron (Nerve _ (AxonAny chan)) = maybeReadChan chan
+getForNeuron (Nerve _ NoAxon) = return Nothing -- we allow getting but return Nothing so that same Neuron defintion can be used on all kinds of Nerves
 
 maybeReadChan :: Chan a -> IO (Maybe a)
 maybeReadChan chan = do
