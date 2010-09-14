@@ -74,6 +74,7 @@ maybeReadChan chan = do
       c <- readChan chan
       return $ Just c
 
+-- First-in element in the channel is last in the list
 slurpChan :: Chan a -> IO [a]
 slurpChan chan = slurpChan' []
   where slurpChan' cs = do
