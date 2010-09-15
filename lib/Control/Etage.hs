@@ -50,10 +50,10 @@ sendForNeuron :: Impulse i => Nerve a a' b (Chan i) i' AxonConductive -> i -> IO
 sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
 sendForNeuron (Nerve _ (AxonAny chan)) i = writeChan chan $ AnyImpulse i
 
-getForNeuron :: Nerve a a' b (Chan i) i' d -> IO (Maybe i')
-getForNeuron (Nerve _ (Axon chan)) = liftM Just $ readChan chan
-getForNeuron (Nerve _ (AxonAny chan)) = liftM Just $ readChan chan
-getForNeuron (Nerve _ NoAxon) = return Nothing -- we allow getting but return Nothing so that same Neuron defintion can be used on all kinds of Nerves
+getForNeuron :: Nerve a a' b (Chan i) i' d -> IO i'
+getForNeuron (Nerve _ (Axon chan)) = readChan chan
+getForNeuron (Nerve _ (AxonAny chan)) = readChan chan
+getForNeuron (Nerve _ NoAxon) = waitForException >> return undefined
 
 maybeGetForNeuron :: Nerve a a' b (Chan i) i' d -> IO (Maybe i')
 maybeGetForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
