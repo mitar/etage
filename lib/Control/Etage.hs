@@ -122,3 +122,7 @@ instance Read ImpulseTime where
     (time, sec) <- readFloat r
     ('s', rest) <- readP_to_S (char 's') sec
     return (time, rest)
+
+-- blocks thread until an exception arrives
+waitForException :: IO ()
+waitForException = newEmptyMVar >>= takeMVar
