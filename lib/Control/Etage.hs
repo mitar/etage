@@ -88,24 +88,25 @@ type NeuronId = ThreadId
 class Neuron n where
   data LiveNeuron n
   data NeuronImpulse n -- it should be made an instance of Impulse
+  data NeuronOptions n
 
   -- TODO: Once defaults for associated type synonyms are implemented change to that, if possible
   mkLiveNeuron :: NeuronId -> LiveNeuron n
   getNeuronId :: LiveNeuron n -> NeuronId
 
-  grow :: IO n
+  grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
   live :: Show a' => Nerve (Chan (NeuronImpulse n)) a' b (Chan (NeuronImpulse n)) (NeuronImpulse n) d -> n -> IO ()
 
-  attach :: Show a' => Nerve (Chan (NeuronImpulse n)) a' b (Chan (NeuronImpulse n)) (NeuronImpulse n) d -> IO (LiveNeuron n)
+  attach :: Show a' => NeuronOptions n -> Nerve (Chan (NeuronImpulse n)) a' b (Chan (NeuronImpulse n)) (NeuronImpulse n) d -> IO (LiveNeuron n)
   deattach :: LiveNeuron n -> IO ()
 
-  grow = return undefined
+  grow _ = return undefined
   dissolve _ = return ()
-  attach nerve = do
+  attach options nerve = do
     currentThread <- myThreadId
     ((liftM mkLiveNeuron) . forkIO $ handle (throwTo currentThread :: SomeException -> IO ()) $
-      bracket (grow :: IO n) dissolve (live nerve)) :: IO (LiveNeuron n)
+      bracket (grow options :: IO n) dissolve (live nerve)) :: IO (LiveNeuron n)
   deattach = killThread . getNeuronId
 
 data (Show a, Typeable a) => DissolvingException a = DissolvingException a deriving (Show, Typeable)
