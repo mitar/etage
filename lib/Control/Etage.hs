@@ -7,7 +7,9 @@ import Control.Exception
 import Control.Monad
 import Data.Time.Clock.POSIX
 import Data.Typeable
+import GHC.Conc (forkOnIO, numCapabilities)
 import Numeric
+import System.Random
 import Text.ParserCombinators.ReadP
 
 class Show a => Impulse a
@@ -83,7 +85,20 @@ slurpChan chan = slurpChan' []
             Nothing -> return cs
             Just c  -> slurpChan' (c:cs)
 
+data NeuronMapCapability = NeuronMapOnCapability Int | NeuronFreelyMapOnCapability deriving (Eq, Show)
+
+mkNeuronMapOnRandomCapability :: IO NeuronMapCapability
+mkNeuronMapOnRandomCapability = do
+  c <- randomRIO (1, numCapabilities)
+  return $ NeuronMapOnCapability c
+
 type NeuronId = ThreadId
+
+forkNeuron :: Neuron n => NeuronOptions n -> IO () -> IO NeuronId
+forkNeuron options a = fork a
+  where fork = case getNeuronMapCapability options of
+                 NeuronFreelyMapOnCapability -> forkIO
+                 NeuronMapOnCapability c     -> forkOnIO c
 
 class Neuron n where
   data LiveNeuron n
@@ -93,6 +108,8 @@ class Neuron n where
   -- TODO: Once defaults for associated type synonyms are implemented change to that, if possible
   mkLiveNeuron :: NeuronId -> LiveNeuron n
   getNeuronId :: LiveNeuron n -> NeuronId
+  
+  getNeuronMapCapability :: NeuronOptions n -> NeuronMapCapability
 
   grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
@@ -101,11 +118,13 @@ class Neuron n where
   attach :: Show a' => NeuronOptions n -> Nerve (Chan (NeuronImpulse n)) a' b (Chan (NeuronImpulse n)) (NeuronImpulse n) d -> IO (LiveNeuron n)
   deattach :: LiveNeuron n -> IO ()
 
+  getNeuronMapCapability _ = NeuronFreelyMapOnCapability
+
   grow _ = return undefined
   dissolve _ = return ()
   attach options nerve = do
     currentThread <- myThreadId
-    ((liftM mkLiveNeuron) . forkIO $ handle (throwTo currentThread :: SomeException -> IO ()) $
+    ((liftM mkLiveNeuron) . forkNeuron options $ handle (throwTo currentThread :: SomeException -> IO ()) $
       bracket (grow options :: IO n) dissolve (live nerve)) :: IO (LiveNeuron n)
   deattach = killThread . getNeuronId
 
