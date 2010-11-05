@@ -67,6 +67,14 @@ slurpForNeuron (Nerve _ (Axon chan)) = slurpChan chan
 slurpForNeuron (Nerve _ (AxonAny chan)) = slurpChan chan
 slurpForNeuron (Nerve _ NoAxon) = return [] -- we allow getting but return [] so that same Neuron defintion can be used on all kinds of Nerves
 
+getNewestForNeuron :: Nerve a a' b (Chan i) i' d -> IO i'
+getNewestForNeuron nerve = do
+  oldest <- getForNeuron nerve
+  others <- slurpForNeuron nerve
+  return $ if null others
+    then oldest
+    else head others
+
 maybeReadChan :: Chan a -> IO (Maybe a)
 maybeReadChan chan = do
   empty <- isEmptyChan chan
