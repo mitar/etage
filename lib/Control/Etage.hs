@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
 
 module Types where
 
@@ -110,9 +110,10 @@ forkNeuron options a = fork a
                  NeuronFreelyMapOnCapability -> forkIO
                  NeuronMapOnCapability c     -> forkOnIO c
 
-class Neuron n where
+class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n where
   data LiveNeuron n
-  data NeuronImpulse n -- it should be made an instance of Impulse
+  data NeuronForImpulse n
+  data NeuronFromImpulse n
   data NeuronOptions n
 
   -- TODO: Once defaults for associated type synonyms are implemented change to that, if possible
@@ -123,9 +124,9 @@ class Neuron n where
 
   grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
-  live :: Show a' => Nerve (Chan (NeuronImpulse n)) a' b (Chan (NeuronImpulse n)) (NeuronImpulse n) d -> n -> IO ()
+  live :: Show a' => Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> n -> IO ()
 
-  attach :: Show a' => NeuronOptions n -> Nerve (Chan (NeuronImpulse n)) a' b (Chan (NeuronImpulse n)) (NeuronImpulse n) d -> IO (LiveNeuron n)
+  attach :: Show a' => NeuronOptions n -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
   deattach :: LiveNeuron n -> IO ()
 
   getNeuronMapCapability _ = NeuronFreelyMapOnCapability
