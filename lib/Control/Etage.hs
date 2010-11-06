@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, GADTs, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
 
 module Types where
 
@@ -9,6 +9,8 @@ import Data.Time.Clock.POSIX
 import Data.Typeable
 import GHC.Conc (forkOnIO, numCapabilities)
 import Numeric
+import System.IO
+import System.Posix.Signals
 import System.Random
 import Text.ParserCombinators.ReadP
 
@@ -143,6 +145,9 @@ instance (Show a, Typeable a) => Exception (DissolvingException a)
 dissolving :: (Show s, Typeable s) => s -> IO a
 dissolving s = throwIO $ DissolvingException s
 
+class ImpulseTranslator i j where
+  translate :: i -> [j]
+
 type ImpulseTime = POSIXTime
 
 instance Read ImpulseTime where
@@ -154,3 +159,37 @@ instance Read ImpulseTime where
 -- blocks thread until an exception arrives
 waitForException :: IO ()
 waitForException = newEmptyMVar >>= takeMVar
+
+axon :: Impulse i => IO (Axon (Chan i) i AxonConductive)
+axon = do
+ chan <- newChan
+ return (Axon chan)
+
+axonAny :: IO (Axon (Chan i) AnyImpulse AxonConductive)
+axonAny = do
+ chan <- newChan
+ return (AxonAny chan)
+
+noAxon :: IO (Axon (Chan i) i AxonNotConductive)
+noAxon = return NoAxon
+
+growNerve :: IO (Axon a a' b) -> IO (Axon c c' d) -> IO (Nerve a a' b c c' d)
+growNerve growFrom growFor = do
+ from <- growFrom
+ for <- growFor
+ return $ Nerve from for
+
+initSystem :: IO ()
+initSystem = do
+  hSetBuffering stderr LineBuffering
+  
+  mainThreadId <- myThreadId
+  
+  _ <- installHandler keyboardSignal (Catch (throwTo mainThreadId UserInterrupt)) Nothing -- sigINT
+  _ <- installHandler softwareTermination (Catch (throwTo mainThreadId UserInterrupt)) Nothing -- sigTERM
+  
+  return ()
+
+translateAndSend :: (Impulse c, ImpulseTranslator i c) => Nerve a a' b (Chan c) c' AxonConductive -> i -> IO ()
+translateAndSend nerve i = do
+  mapM_ (sendForNeuron nerve) $ translate i
