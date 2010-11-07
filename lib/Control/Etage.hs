@@ -120,21 +120,27 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
   mkLiveNeuron :: NeuronId -> LiveNeuron n
   getNeuronId :: LiveNeuron n -> NeuronId
   
+  mkDefaultOptions :: IO (NeuronOptions n)
+  
   getNeuronMapCapability :: NeuronOptions n -> NeuronMapCapability
 
   grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
   live :: Show a' => Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> n -> IO ()
 
-  attach :: Show a' => NeuronOptions n -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
+  attach :: Show a' => (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
   deattach :: LiveNeuron n -> IO ()
+
+  mkDefaultOptions = return undefined
 
   getNeuronMapCapability _ = NeuronFreelyMapOnCapability
 
   grow _ = return undefined
   dissolve _ = return ()
-  attach options nerve = do
+  attach optionsSetter nerve = do
     currentThread <- myThreadId
+    defOptions <- mkDefaultOptions
+    let options = optionsSetter defOptions
     ((liftM mkLiveNeuron) . forkNeuron options $ handle (throwTo currentThread :: SomeException -> IO ()) $
       bracket (grow options :: IO n) dissolve (live nerve)) :: IO (LiveNeuron n)
   deattach = killThread . getNeuronId
@@ -194,3 +200,6 @@ initSystem = do
 translateAndSend :: (Impulse c, ImpulseTranslator i c) => Nerve a a' b (Chan c) c' AxonConductive -> i -> IO ()
 translateAndSend nerve i = do
   mapM_ (sendForNeuron nerve) $ translate i
+
+defaultOptions :: Neuron n => NeuronOptions n -> NeuronOptions n
+defaultOptions = id
