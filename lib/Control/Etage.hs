@@ -2,6 +2,8 @@
 
 module Types where
 
+import Prelude hiding (catch)
+
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
@@ -17,6 +19,7 @@ import Text.ParserCombinators.ReadP
 class Show a => Impulse a
 
 -- TODO: Move to a special Neuron which can accept different kinds of input (default Neurons can accept only their Impulses)
+-- TODO: Make example "any" Neuron which dumps everything it passes through
 data AnyImpulse :: * where
   AnyImpulse :: Impulse i => i -> AnyImpulse
 
@@ -102,6 +105,7 @@ mkNeuronMapOnRandomCapability = do
   c <- randomRIO (1, numCapabilities)
   return $ NeuronMapOnCapability c
 
+type NeuronDissolved = MVar ()
 type NeuronId = ThreadId
 
 divideNeuron :: Neuron n => NeuronOptions n -> IO () -> IO NeuronId
@@ -117,7 +121,8 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
   data NeuronOptions n
 
   -- TODO: Once defaults for associated type synonyms are implemented change to that, if possible
-  mkLiveNeuron :: NeuronId -> LiveNeuron n
+  mkLiveNeuron :: NeuronDissolved -> NeuronId -> LiveNeuron n
+  getNeuronDissolved :: LiveNeuron n -> NeuronDissolved
   getNeuronId :: LiveNeuron n -> NeuronId
   
   mkDefaultOptions :: IO (NeuronOptions n)
@@ -129,7 +134,7 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
   live :: Show a' => Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> n -> IO ()
 
   attach :: Show a' => (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
-  deattach :: LiveNeuron n -> IO ()
+  detach :: LiveNeuron n -> IO ()
 
   mkDefaultOptions = return undefined
 
@@ -139,13 +144,20 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
   dissolve _ = return ()
   live _ _ = waitForDissolve []
   
+  -- TODO: Move default implementation out of the class so that it can be reused/wrapped around in some other class instance definition
   attach optionsSetter nerve = do
     currentThread <- myThreadId
+    dissolved <- newEmptyMVar
     defOptions <- mkDefaultOptions
     let options = optionsSetter defOptions
-    ((liftM mkLiveNeuron) . divideNeuron options $ handle (throwTo currentThread :: SomeException -> IO ()) $
-      bracket (grow options :: IO n) (block . dissolve) (live nerve)) :: IO (LiveNeuron n) -- TODO: Change block to nonInterruptibleMask? Or remove?
-  deattach = killThread . getNeuronId
+        -- TODO: There is a race condition between divideNeuron and finally which could prevent finally to ever fill dissolved MVar
+        run = bracket (grow options) (block . dissolve) (live nerve) `catches` [ -- TODO: Change block to nonInterruptibleMask? Or remove?
+                      Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
+                      Handler (throwTo currentThread :: SomeException -> IO ())
+                    ] `finally` (putMVar dissolved () >> throwIO ThreadKilled)
+    nid <- divideNeuron options run
+    return $ mkLiveNeuron dissolved nid
+  detach = dissolveNeuron
 
 data (Show a, Typeable a) => DissolvingException a = DissolvingException a deriving (Show, Typeable)
 
@@ -153,6 +165,13 @@ instance (Show a, Typeable a) => Exception (DissolvingException a)
 
 dissolving :: (Show s, Typeable s) => s -> IO a
 dissolving s = throwIO $ DissolvingException s
+
+data DissolveException = DissolveException deriving (Show, Typeable)
+
+instance Exception DissolveException
+
+dissolveNeuron :: Neuron n => LiveNeuron n -> IO ()
+dissolveNeuron n = throwTo (getNeuronId n) DissolveException
 
 class (Impulse i, Impulse j) => ImpulseTranslator i j where
   translate :: i -> [j]
@@ -205,13 +224,14 @@ instance Show EmptyFromImpulse where
   show _ = "EmptyFromImpulse"
 
 instance Neuron EmptyNeuron where
-  data LiveNeuron EmptyNeuron = LiveEmptyNeuron NeuronId
+  data LiveNeuron EmptyNeuron = LiveEmptyNeuron NeuronDissolved NeuronId
   data NeuronForImpulse EmptyNeuron
   data NeuronFromImpulse EmptyNeuron
   data NeuronOptions EmptyNeuron = EmptyOptions {}
   
-  mkLiveNeuron nid = LiveEmptyNeuron nid
-  getNeuronId (LiveEmptyNeuron nid) = nid
+  mkLiveNeuron dissolved nid = LiveEmptyNeuron dissolved nid
+  getNeuronDissolved (LiveEmptyNeuron dissolved _) = dissolved
+  getNeuronId (LiveEmptyNeuron _ nid) = nid
 
 growEnvironment :: IO ()
 growEnvironment = do
@@ -242,13 +262,22 @@ propagate from for = do
 data Growable where
   Growable :: Neuron n => LiveNeuron n -> Growable
 
+-- TODO: Change this into a monad and use do notation?
 growNeurons :: [IO Growable] -> IO [Growable]
 growNeurons attaches = growNeurons' attaches []
   where growNeurons' [] ls      = return ls
-        growNeurons' (a:ats) ls = bracketOnError a (\(Growable l) -> deattach l) (\l -> growNeurons' ats (l:ls))
+        growNeurons' (a:ats) ls = bracketOnError a (\(Growable l) -> detach l) (\l -> growNeurons' ats (l:ls))
 
--- blocks thread until an exception arrives and cleans-up afterwards
+-- Blocks thread until an exception arrives and cleans-up afterwards, waiting for all threads to finish
 waitForDissolve :: [Growable] -> IO ()
-waitForDissolve neurons = do
-  _ <- newEmptyMVar >>= takeMVar
-  block $ mapM_ (\(Growable l) -> deattach l) neurons -- TODO: Change block to nonInterruptibleMask? Or remove?
+waitForDissolve neurons = block $ do -- TODO: Change block to nonInterruptibleMask? Or remove?
+  _ <- (newEmptyMVar >>= takeMVar) `finally` do
+    -- TODO: Should also takeMVar go into detach? Or is better to first send exceptions and then wait?
+    mapM_ (\(Growable l) -> uninterruptible $ detach l) neurons
+    mapM_ (\(Growable l) -> uninterruptible $ takeMVar . getNeuronDissolved $ l) neurons
+  return ()
+
+-- TODO: Remove with GHC 7.0 and masks?
+-- Big hack to prevent interruption: it simply retries interrupted computation
+uninterruptible :: IO a -> IO a
+uninterruptible a = block $ a `catch` (\(_ :: SomeException) -> uninterruptible a)
