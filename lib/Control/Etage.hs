@@ -1,6 +1,51 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
 
-module Types where
+module Types (
+  Impulse,
+  AnyImpulse(..),
+  AxonConductive,
+  AxonNotConductive,
+  Axon(..),
+  Nerve(..),
+  sendFromNeuron,
+  getFromNeuron,
+  maybeGetFromNeuron,
+  slurpFromNeuron,
+  sendForNeuron,
+  getForNeuron,
+  maybeGetForNeuron,
+  slurpForNeuron,
+  getNewestForNeuron,
+  NeuronMapCapability(..),
+  mkNeuronMapOnRandomCapability,
+  NeuronDissolved,
+  NeuronId,
+  divideNeuron,
+  Neuron(..),
+  DissolvingException(..),
+  dissolving,
+  DissolveException(..),
+  dissolveNeuron,
+  ImpulseTranslator(..),
+  ImpulseTime,
+  axon,
+  axonAny,
+  noAxon,
+  growNerve,
+  defaultOptions,
+  LiveEmptyNeuron,
+  EmptyForImpulse,
+  EmptyFromImpulse,
+  EmptyOptions,
+  growEnvironment,
+  translateAndSend,
+  Translatable(..),
+  propagate,
+  Growable(..),
+  growNeurons,
+  waitForDissolve,
+  uninterruptible
+) where
 
 import Prelude hiding (catch)
 
@@ -227,7 +272,7 @@ instance Neuron EmptyNeuron where
   data LiveNeuron EmptyNeuron = LiveEmptyNeuron NeuronDissolved NeuronId
   data NeuronForImpulse EmptyNeuron
   data NeuronFromImpulse EmptyNeuron
-  data NeuronOptions EmptyNeuron = EmptyOptions {}
+  data NeuronOptions EmptyNeuron = EmptyOptions
   
   mkLiveNeuron dissolved nid = LiveEmptyNeuron dissolved nid
   getNeuronDissolved (LiveEmptyNeuron dissolved _) = dissolved
