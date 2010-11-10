@@ -274,7 +274,7 @@ instance Neuron EmptyNeuron where
   data NeuronFromImpulse EmptyNeuron
   data NeuronOptions EmptyNeuron = EmptyOptions
   
-  mkLiveNeuron dissolved nid = LiveEmptyNeuron dissolved nid
+  mkLiveNeuron = LiveEmptyNeuron
   getNeuronDissolved (LiveEmptyNeuron dissolved _) = dissolved
   getNeuronId (LiveEmptyNeuron _ nid) = nid
 
@@ -290,8 +290,7 @@ growEnvironment = do
   return ()
 
 translateAndSend :: ImpulseTranslator i c => Nerve a a' b (Chan c) c' AxonConductive -> i -> IO ()
-translateAndSend nerve i = do
-  mapM_ (sendForNeuron nerve) $ translate i
+translateAndSend nerve i = mapM_ (sendForNeuron nerve) $ translate i
 
 data Translatable i where
   Translatable :: ImpulseTranslator i c => Nerve a a' b (Chan c) c' AxonConductive -> Translatable i
