@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
 module Types (
   Impulse,
@@ -11,11 +11,12 @@ module Types (
   getFromNeuron,
   maybeGetFromNeuron,
   slurpFromNeuron,
+  waitAndSlurpFromNeuron,
   sendForNeuron,
   getForNeuron,
   maybeGetForNeuron,
   slurpForNeuron,
-  getNewestForNeuron,
+  waitAndSlurpForNeuron,
   NeuronMapCapability(..),
   mkNeuronMapOnRandomCapability,
   NeuronDissolved,
@@ -33,10 +34,6 @@ module Types (
   noAxon,
   growNerve,
   defaultOptions,
-  LiveEmptyNeuron,
-  EmptyForImpulse,
-  EmptyFromImpulse,
-  EmptyOptions,
   growEnvironment,
   translateAndSend,
   Translatable(..),
@@ -61,6 +58,8 @@ import System.Posix.Signals
 import System.Random
 import Text.ParserCombinators.ReadP
 
+-- TODO: Implement timestamp retrieval
+-- TODO: Impulse cannot really be shown when taken from Nerve?
 class Show a => Impulse a
 
 -- TODO: Move to a special Neuron which can accept different kinds of input (default Neurons can accept only their Impulses)
@@ -98,6 +97,12 @@ slurpFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO [i']
 slurpFromNeuron (Nerve (Axon chan) _) = slurpChan chan
 slurpFromNeuron (Nerve (AxonAny chan) _) = slurpChan chan
 
+waitAndSlurpFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO [i']
+waitAndSlurpFromNeuron nerve = do
+  oldest <- getFromNeuron nerve
+  others <- slurpFromNeuron nerve
+  return $ others ++ [oldest]
+
 sendForNeuron :: Impulse i => Nerve a a' b (Chan i) i' AxonConductive -> i -> IO ()
 sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
 sendForNeuron (Nerve _ (AxonAny chan)) i = writeChan chan $ AnyImpulse i
@@ -117,13 +122,19 @@ slurpForNeuron (Nerve _ (Axon chan)) = slurpChan chan
 slurpForNeuron (Nerve _ (AxonAny chan)) = slurpChan chan
 slurpForNeuron (Nerve _ NoAxon) = return [] -- we allow getting but return [] so that same Neuron defintion can be used on all kinds of Nerves
 
-getNewestForNeuron :: Nerve a a' b (Chan i) i' d -> IO i'
-getNewestForNeuron nerve = do
+waitAndSlurpForNeuron :: Nerve a a' b (Chan i) i' d -> IO [i']
+waitAndSlurpForNeuron nerve = do
   oldest <- getForNeuron nerve
   others <- slurpForNeuron nerve
-  return $ if null others
-    then oldest
-    else head others
+  return $ others ++ [oldest]
+
+{-
+-- TODO: Enable in GHC 7.0
+getNewestForNeuron :: Data i' => Nerve a a' b (Chan i) i' d -> IO [i']
+getNewestForNeuron nerve = do
+  impulses <- waitAndSlurpForNeuron nerve
+  return $ nubBy ((==) `on` toConstr) $ impulses
+-}
 
 maybeReadChan :: Chan a -> IO (Maybe a)
 maybeReadChan chan = do
@@ -153,12 +164,15 @@ mkNeuronMapOnRandomCapability = do
 type NeuronDissolved = MVar ()
 type NeuronId = ThreadId
 
+-- TODO: Move dissolved MVar handling into divideNeuron
+-- TODO: Do not export?
 divideNeuron :: Neuron n => NeuronOptions n -> IO () -> IO NeuronId
 divideNeuron options a = fork a
   where fork = case getNeuronMapCapability options of
                  NeuronFreelyMapOnCapability -> forkIO
                  NeuronMapOnCapability c     -> forkOnIO c
 
+-- TODO: Add Data in Typeable requirements for NeuronForImpulse and NeuronFromImpulse in GHC 7.0
 class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n where
   data LiveNeuron n
   data NeuronForImpulse n
@@ -176,9 +190,9 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
 
   grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
-  live :: Show a' => Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> n -> IO ()
+  live :: Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> n -> IO ()
 
-  attach :: Show a' => (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
+  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
   detach :: LiveNeuron n -> IO ()
 
   mkDefaultOptions = return undefined
@@ -195,12 +209,14 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
     dissolved <- newEmptyMVar
     defOptions <- mkDefaultOptions
     let options = optionsSetter defOptions
-        -- TODO: There is a race condition between divideNeuron and finally which could prevent finally to ever fill dissolved MVar
-        run = bracket (grow options) (block . dissolve) (live nerve) `catches` [ -- TODO: Change block to nonInterruptibleMask? Or remove?
-                      Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
-                      Handler (throwTo currentThread :: SomeException -> IO ())
-                    ] `finally` (putMVar dissolved () >> throwIO ThreadKilled)
-    nid <- divideNeuron options run
+        sequel = putMVar dissolved ()
+        run = do
+          bracket (grow options) dissolve (unblock . live nerve) `catches` [
+              Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
+              Handler (throwTo currentThread :: SomeException -> IO ())
+            ] `onException` sequel -- TODO: Change to finally in GHC 7.0
+          sequel
+    nid <- block $ divideNeuron options run -- TODO: Change block to nonInterruptibleMask? Or remove? Or move to divideNeuron?
     return $ mkLiveNeuron dissolved nid
   detach = dissolveNeuron
 
@@ -251,39 +267,13 @@ growNerve growFrom growFor = do
 defaultOptions :: Neuron n => NeuronOptions n -> NeuronOptions n
 defaultOptions = id
 
--- TODO: Could be probably simplified once defaults for associated type synonyms are implemented
-data EmptyNeuron
-
-instance Impulse EmptyForImpulse
-instance Impulse EmptyFromImpulse
-
-type LiveEmptyNeuron = LiveNeuron EmptyNeuron
-type EmptyForImpulse = NeuronForImpulse EmptyNeuron
-type EmptyFromImpulse = NeuronFromImpulse EmptyNeuron
-type EmptyOptions = NeuronOptions EmptyNeuron
-
-instance Show EmptyForImpulse where
-  show _ = "EmptyForImpulse"
-
-instance Show EmptyFromImpulse where
-  show _ = "EmptyFromImpulse"
-
-instance Neuron EmptyNeuron where
-  data LiveNeuron EmptyNeuron = LiveEmptyNeuron NeuronDissolved NeuronId
-  data NeuronForImpulse EmptyNeuron
-  data NeuronFromImpulse EmptyNeuron
-  data NeuronOptions EmptyNeuron = EmptyOptions
-  
-  mkLiveNeuron = LiveEmptyNeuron
-  getNeuronDissolved (LiveEmptyNeuron dissolved _) = dissolved
-  getNeuronId (LiveEmptyNeuron _ nid) = nid
-
 growEnvironment :: IO ()
 growEnvironment = do
   hSetBuffering stderr LineBuffering
   
   mainThreadId <- myThreadId
   
+  -- TODO: User interrupt sometimes hangs dissolving
   _ <- installHandler keyboardSignal (Catch (throwTo mainThreadId UserInterrupt)) Nothing -- sigINT
   _ <- installHandler softwareTermination (Catch (throwTo mainThreadId UserInterrupt)) Nothing -- sigTERM
   
@@ -295,12 +285,48 @@ translateAndSend nerve i = mapM_ (sendForNeuron nerve) $ translate i
 data Translatable i where
   Translatable :: ImpulseTranslator i c => Nerve a a' b (Chan c) c' AxonConductive -> Translatable i
 
-propagate :: Nerve (Chan a) a' AxonConductive c c' d -> [Translatable a'] -> IO ()
-propagate from for = do
-  options <- mkDefaultOptions :: IO EmptyOptions
-  _ <- divideNeuron options $ forever $ do
+data PropagateNeuron a a' c c' d = PropagateNeuron (PropagateOptions a a' c c' d)
+
+instance Impulse (PropagateForImpulse a a' c c' d)
+instance Impulse (PropagateFromImpulse a a' c c' d)
+
+type LivePropagateNeuron a a' c c' d = LiveNeuron (PropagateNeuron a a' c c' d)
+type PropagateForImpulse a a' c c' d = NeuronForImpulse (PropagateNeuron a a' c c' d)
+type PropagateFromImpulse a a' c c' d = NeuronFromImpulse (PropagateNeuron a a' c c' d)
+type PropagateOptions a a' c c' d = NeuronOptions (PropagateNeuron a a' c c' d)
+
+-- TODO: Remove in favor of automatic deriving in GHC 7.0
+instance Show (PropagateForImpulse a a' c c' d) where
+  show _ = "PropagateForImpulse"
+
+instance Show (PropagateFromImpulse a a' c c' d) where
+  show _ = "PropagateFromImpulse"
+
+instance Neuron (PropagateNeuron a a' c c' d) where
+  data LiveNeuron (PropagateNeuron a a' c c' d) = LivePropagateNeuron NeuronDissolved NeuronId
+  data NeuronForImpulse (PropagateNeuron a a' c c' d)
+  data NeuronFromImpulse (PropagateNeuron a a' c c' d)
+  data NeuronOptions (PropagateNeuron a a' c c' d) = PropagateOptions {
+      from :: Nerve (Chan a) a' AxonConductive c c' d,
+      for ::[Translatable a']
+    }
+  
+  mkLiveNeuron = LivePropagateNeuron
+  getNeuronDissolved (LivePropagateNeuron dissolved _) = dissolved
+  getNeuronId (LivePropagateNeuron _ nid) = nid
+  
+  mkDefaultOptions = return PropagateOptions { from = undefined, for = undefined }
+  
+  grow options = return $ PropagateNeuron options
+  
+  live _ (PropagateNeuron PropagateOptions { .. }) = forever $ do
     i <- getFromNeuron from
     mapM_ (\(Translatable n) -> translateAndSend n i) for
+
+propagate :: forall a a' c c' d. Nerve (Chan a) a' AxonConductive c c' d -> [Translatable a'] -> IO ()
+propagate from for = do
+  -- we do not manage this neuron, it will be cleaned by RTS at program exit
+  _ <- attach (\o -> o { from, for }) undefined :: IO (LivePropagateNeuron a a' c c' d)
   return ()
 
 data Growable where
@@ -313,6 +339,7 @@ growNeurons attaches = growNeurons' attaches []
         growNeurons' (a:ats) ls = bracketOnError a (\(Growable l) -> detach l) (\l -> growNeurons' ats (l:ls))
 
 -- Blocks thread until an exception arrives and cleans-up afterwards, waiting for all threads to finish
+-- Should have MVar computations wrapped in uninterruptible and should not use any IO (because all this can be interrupted despite block)
 waitForDissolve :: [Growable] -> IO ()
 waitForDissolve neurons = block $ do -- TODO: Change block to nonInterruptibleMask? Or remove?
   _ <- (newEmptyMVar >>= takeMVar) `finally` do
