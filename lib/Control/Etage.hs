@@ -220,12 +220,12 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
     return $ mkLiveNeuron dissolved nid
   detach = dissolveNeuron
 
-data (Show a, Typeable a) => DissolvingException a = DissolvingException a deriving (Show, Typeable)
+data DissolvingException = DissolvingException String deriving (Show, Typeable)
 
-instance (Show a, Typeable a) => Exception (DissolvingException a)
+instance Exception DissolvingException
 
-dissolving :: (Show s, Typeable s) => s -> IO a
-dissolving s = throwIO $ DissolvingException s
+dissolving :: Show n => n -> IO a
+dissolving n = throwIO $ DissolvingException (show n)
 
 data DissolveException = DissolveException deriving (Show, Typeable)
 
