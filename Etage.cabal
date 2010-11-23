@@ -10,7 +10,7 @@ Description:         A general data-flow framework featuring nondeterminism and 
                      Its main goal is to model complex neural networks with more biological realism. Namely that impulses do
                      take time to travel and neuron responses are also not instantaneous. And of course that neural systems are in
                      its base nondeterministic and that some level of determinism is build upon that. All this of course makes reasoning
-                     about such networks even harder.
+                     about such networks even harder (impossible?).
                      .
                      This framework is in fact just a simple abstraction of Haskell threads and data passing between them through
                      channels with threads' initialization and cleanup wrapped into a Haskell type class.
@@ -28,10 +28,14 @@ Stability:           experimental
 Homepage:            http://mitar.tnode.com
 
 Library
-  Exposed-modules:     Control.Etage
+  Exposed-modules:     Control.Etage,
+                       Control.Etage.Dump,
+                       Control.Etage.Random
   Build-depends:       base >= 4 && < 5,
                        random > 1.0 && < 2,
                        unix >= 2.4 && < 3,
                        time >= 1.1 && < 2
+  Other-modules:       Control.Etage.Types,
+                       Control.Etage.Propagate
   HS-source-dirs:      lib
   GHC-options:         -Wall
