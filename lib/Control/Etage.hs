@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
-module Types (
+module Control.Etage (
   Impulse,
   AnyImpulse(..),
   AxonConductive,
@@ -58,10 +58,11 @@ import System.Posix.Signals
 import System.Random
 import Text.ParserCombinators.ReadP
 
--- TODO: Implement timestamp retrieval
 -- TODO: Impulse cannot really be shown when taken from Nerve?
-class Show a => Impulse a
+-- TODO: Implement delay Neuron (constant delay, random from some distribution)
 
+class Show a => Impulse a where
+  
 -- TODO: Move to a special Neuron which can accept different kinds of input (default Neurons can accept only their Impulses)
 -- TODO: Make example "any" Neuron which dumps everything it passes through
 data AnyImpulse :: * where
