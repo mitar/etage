@@ -11,45 +11,45 @@ import Control.Etage.Types
 
 -- TODO: Implement delay in propagation (constant delay, random from some distribution)
 
-data PropagateNeuron a a' c c' d = PropagateNeuron (PropagateOptions a a' c c' d)
+data PropagateNeuron from for forConductivity = PropagateNeuron (PropagateOptions from for forConductivity)
 
 {-|
 Impulse instance for internal 'Neuron' which implements 'propagate'.
 -}
-instance Impulse (PropagateForImpulse a a' c c' d) where
+instance Impulse (PropagateForImpulse from for forConductivity) where
   impulseTime _ = undefined
   impulseValue _ = undefined
 
 {-|
 Impulse instance for internal 'Neuron' which implements 'propagate'.
 -}
-instance Impulse (PropagateFromImpulse a a' c c' d) where
+instance Impulse (PropagateFromImpulse from for forConductivity) where
   impulseTime _ = undefined
   impulseValue _ = undefined
 
-type LivePropagateNeuron a a' c c' d = LiveNeuron (PropagateNeuron a a' c c' d)
-type PropagateForImpulse a a' c c' d = NeuronForImpulse (PropagateNeuron a a' c c' d)
-type PropagateFromImpulse a a' c c' d = NeuronFromImpulse (PropagateNeuron a a' c c' d)
-type PropagateOptions a a' c c' d = NeuronOptions (PropagateNeuron a a' c c' d)
+type LivePropagateNeuron from for forConductivity = LiveNeuron (PropagateNeuron from for forConductivity)
+type PropagateForImpulse from for forConductivity = NeuronForImpulse (PropagateNeuron from for forConductivity)
+type PropagateFromImpulse from for forConductivity = NeuronFromImpulse (PropagateNeuron from for forConductivity)
+type PropagateOptions from for forConductivity = NeuronOptions (PropagateNeuron from for forConductivity)
 
 -- TODO: Remove in favor of automatic deriving in GHC 7.0?
-instance Show (PropagateForImpulse a a' c c' d) where
+instance Show (PropagateForImpulse from for forConductivity) where
   show _ = undefined
 
 -- TODO: Remove in favor of automatic deriving in GHC 7.0?
-instance Show (PropagateFromImpulse a a' c c' d) where
+instance Show (PropagateFromImpulse from for forConductivity) where
   show _ = undefined
 
 {-|
 Internal 'Neuron' which implements 'propagate'.
 -}
-instance Neuron (PropagateNeuron a a' c c' d) where
-  data LiveNeuron (PropagateNeuron a a' c c' d) = LivePropagateNeuron NeuronDissolved NeuronId
-  data NeuronForImpulse (PropagateNeuron a a' c c' d)
-  data NeuronFromImpulse (PropagateNeuron a a' c c' d)
-  data NeuronOptions (PropagateNeuron a a' c c' d) = PropagateOptions {
-      from :: Nerve (Chan a) a' AxonConductive c c' d,
-      for ::[Translatable a']
+instance Neuron (PropagateNeuron from for forConductivity) where
+  data LiveNeuron (PropagateNeuron from for forConductivity) = LivePropagateNeuron NeuronDissolved NeuronId
+  data NeuronForImpulse (PropagateNeuron from for forConductivity)
+  data NeuronFromImpulse (PropagateNeuron from for forConductivity)
+  data NeuronOptions (PropagateNeuron from for forConductivity) = PropagateOptions {
+      from :: Nerve (Chan from) AxonConductive for forConductivity,
+      for ::[Translatable from]
     }
   
   mkLiveNeuron = LivePropagateNeuron
@@ -64,8 +64,8 @@ instance Neuron (PropagateNeuron a a' c c' d) where
     i <- getFromNeuron from
     mapM_ (\(Translatable n) -> translateAndSend n i) for
 
-propagate :: forall a a' c c' d. Nerve (Chan a) a' AxonConductive c c' d -> [Translatable a'] -> IO ()
+propagate :: forall from for forConductivity. Nerve (Chan from) AxonConductive for forConductivity -> [Translatable from] -> IO ()
 propagate from for = do
   -- we do not manage this neuron, it will be cleaned by RTS at program exit
-  _ <- attach (\o -> o { from, for }) undefined :: IO (LivePropagateNeuron a a' c c' d)
+  _ <- attach (\o -> o { from, for }) undefined :: IO (LivePropagateNeuron from for forConductivity)
   return ()

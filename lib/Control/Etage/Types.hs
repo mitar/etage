@@ -3,7 +3,6 @@
 module Control.Etage.Types (
   Neuron(..),
   Impulse(..),
-  AnyImpulse(..),
   AxonConductive,
   AxonNotConductive,
   Axon(..),
@@ -22,7 +21,6 @@ module Control.Etage.Types (
   mkNeuronMapOnRandomCapability,
   NeuronDissolved,
   NeuronId,
-  divideNeuron,
   DissolvingException(..),
   dissolving,
   DissolveException(..),
@@ -31,7 +29,6 @@ module Control.Etage.Types (
   ImpulseTime,
   ImpulseValue,
   axon,
-  axonAny,
   noAxon,
   growNerve,
   defaultOptions,
@@ -41,7 +38,6 @@ module Control.Etage.Types (
   Growable(..),
   growNeurons,
   waitForDissolve,
-  uninterruptible,
   getCurrentImpulseTime,
   impulseEq,
   impulseCompare
@@ -60,93 +56,61 @@ import System.Posix.Signals
 import System.Random
 import Text.ParserCombinators.ReadP
 
--- TODO: Impulse cannot really be shown when taken from Nerve?
-
--- TODO: Find better general representation for values (something analog to what a hologram is)
+-- TODO: Find better general representation for values (something analog to what a hologram is, so that it can be gradually simplified and gradually reconstructed)
 type ImpulseValue = [Rational]
 
 {-|
 Type class with common operations for impulses send over 'Nerve's and processed in 'Neuron's.
 -}
-class Show a => Impulse a where
-  impulseTime :: a -> ImpulseTime
-  impulseValue :: a -> ImpulseValue
-
--- TODO: Move to a special Neuron which can accept different kinds of input (default Neurons can accept only their Impulses), or maybe AnyImpulse could be just default data type for NeuronForImpulse
--- TODO: Make example "any" Neuron which dumps everything it passes through
-
-{-|
-Existentially quantified type for grouping all instances of 'Impulse' together.
--}
-data AnyImpulse :: * where
-  AnyImpulse :: Impulse i => i -> AnyImpulse
-
-deriving instance Show (AnyImpulse)
-
-{-|
-Equality is defined as equality of values returned by 'impulseTime' and 'impulseValue'.
--}
-instance Eq AnyImpulse where
-  a == b = impulseTime a == impulseTime b && impulseValue a == impulseValue b
-
-instance Impulse AnyImpulse where
-  impulseTime (AnyImpulse a) = impulseTime a
-  impulseValue (AnyImpulse a) = impulseValue a
+class Show i => Impulse i where
+  impulseTime :: i -> ImpulseTime
+  impulseValue :: i -> ImpulseValue
 
 data AxonConductive
 data AxonNotConductive
 
-data Axon :: * -> * -> * -> * where -- Axon, type of channel elements, type of elements possible to get from the channel, is axon conductive
-  Axon :: Impulse i => Chan i -> Axon (Chan i) i AxonConductive
-  AxonAny :: Chan AnyImpulse -> Axon (Chan i) AnyImpulse AxonConductive
-  NoAxon :: Axon (Chan i) i AxonNotConductive
+data Axon impulse conductivity where
+  Axon :: Impulse i => Chan i -> Axon (Chan i) AxonConductive
+  NoAxon :: Axon (Chan i) AxonNotConductive
 
-data Nerve :: * -> * -> * -> * -> * -> * -> * where
-  Nerve :: Axon a a' b -> Axon c c' d -> Nerve a a' b c c' d
+data Nerve from fromConductivity for forConductivity where
+  Nerve :: (Impulse from, Impulse for) => Axon from fromConductivity -> Axon for forConductivity -> Nerve from fromConductivity for forConductivity
 
-sendFromNeuron :: Impulse i => Nerve (Chan i) i' b c c' d -> i -> IO ()
+sendFromNeuron :: Nerve (Chan i) fromConductivity for forConductivity -> i -> IO ()
 sendFromNeuron (Nerve (Axon chan) _) i = writeChan chan i
-sendFromNeuron (Nerve (AxonAny chan) _) i = writeChan chan $ AnyImpulse i
 sendFromNeuron (Nerve NoAxon _) _ = return () -- we allow sending but ignore so that same Neuron defintion can be used on all kinds of Nerves
 
-getFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO i'
+getFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO i
 getFromNeuron (Nerve (Axon chan) _) = readChan chan
-getFromNeuron (Nerve (AxonAny chan) _) = readChan chan
 
-maybeGetFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO (Maybe i')
+maybeGetFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO (Maybe i)
 maybeGetFromNeuron (Nerve (Axon chan) _) = maybeReadChan chan
-maybeGetFromNeuron (Nerve (AxonAny chan) _) = maybeReadChan chan
 
-slurpFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO [i']
+slurpFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO [i]
 slurpFromNeuron (Nerve (Axon chan) _) = slurpChan chan
-slurpFromNeuron (Nerve (AxonAny chan) _) = slurpChan chan
 
-waitAndSlurpFromNeuron :: Nerve (Chan i) i' AxonConductive c c' d -> IO [i']
+waitAndSlurpFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO [i]
 waitAndSlurpFromNeuron nerve = do
   oldest <- getFromNeuron nerve
   others <- slurpFromNeuron nerve
   return $ others ++ [oldest]
 
-sendForNeuron :: Impulse i => Nerve a a' b (Chan i) i' AxonConductive -> i -> IO ()
+sendForNeuron :: Nerve from fromConductivity (Chan i) AxonConductive -> i -> IO ()
 sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
-sendForNeuron (Nerve _ (AxonAny chan)) i = writeChan chan $ AnyImpulse i
 
-getForNeuron :: Nerve a a' b (Chan i) i' d -> IO i'
+getForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO i
 getForNeuron (Nerve _ (Axon chan)) = readChan chan
-getForNeuron (Nerve _ (AxonAny chan)) = readChan chan
 getForNeuron (Nerve _ NoAxon) = waitForDissolve [] >> return undefined
 
-maybeGetForNeuron :: Nerve a a' b (Chan i) i' d -> IO (Maybe i')
+maybeGetForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO (Maybe i)
 maybeGetForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
-maybeGetForNeuron (Nerve _ (AxonAny chan)) = maybeReadChan chan
 maybeGetForNeuron (Nerve _ NoAxon) = return Nothing -- we allow getting but return Nothing so that same Neuron defintion can be used on all kinds of Nerves
 
-slurpForNeuron :: Nerve a a' b (Chan i) i' d -> IO [i']
+slurpForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO [i]
 slurpForNeuron (Nerve _ (Axon chan)) = slurpChan chan
-slurpForNeuron (Nerve _ (AxonAny chan)) = slurpChan chan
 slurpForNeuron (Nerve _ NoAxon) = return [] -- we allow getting but return [] so that same Neuron defintion can be used on all kinds of Nerves
 
-waitAndSlurpForNeuron :: Nerve a a' b (Chan i) i' d -> IO [i']
+waitAndSlurpForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO [i]
 waitAndSlurpForNeuron nerve = do
   oldest <- getForNeuron nerve
   others <- slurpForNeuron nerve
@@ -154,7 +118,7 @@ waitAndSlurpForNeuron nerve = do
 
 {-
 -- TODO: Enable in GHC 7.0
-getNewestForNeuron :: Data i' => Nerve a a' b (Chan i) i' d -> IO [i']
+getNewestForNeuron :: Data i => Nerve from fromConductivity (Chan i) forConductivity -> IO [i]
 getNewestForNeuron nerve = do
   impulses <- waitAndSlurpForNeuron nerve
   return $ nubBy ((==) `on` toConstr) $ impulses
@@ -178,7 +142,7 @@ slurpChan chan = slurpChan' []
             Nothing -> return cs
             Just c  -> slurpChan' (c:cs)
 
-data NeuronMapCapability = NeuronMapOnCapability Int | NeuronFreelyMapOnCapability deriving (Eq, Show)
+data NeuronMapCapability = NeuronMapOnCapability Int | NeuronFreelyMapOnCapability deriving (Eq, Ord, Read, Show)
 
 mkNeuronMapOnRandomCapability :: IO NeuronMapCapability
 mkNeuronMapOnRandomCapability = do
@@ -189,7 +153,6 @@ type NeuronDissolved = MVar ()
 type NeuronId = ThreadId
 
 -- TODO: Move dissolved MVar handling into divideNeuron
--- TODO: Do not export?
 divideNeuron :: Neuron n => NeuronOptions n -> IO () -> IO NeuronId
 divideNeuron options a = fork a
   where fork = case getNeuronMapCapability options of
@@ -214,9 +177,9 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
 
   grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
-  live :: Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> n -> IO ()
+  live :: Nerve (Chan (NeuronFromImpulse n)) fromConductivity (Chan (NeuronForImpulse n)) forConductivity -> n -> IO ()
 
-  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) a' b (Chan (NeuronForImpulse n)) (NeuronForImpulse n) d -> IO (LiveNeuron n)
+  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) fromConductivity (Chan (NeuronForImpulse n)) forConductivity -> IO (LiveNeuron n)
   detach :: LiveNeuron n -> IO ()
 
   mkDefaultOptions = return undefined
@@ -269,20 +232,15 @@ instance Read ImpulseTime where
     ('s', rest) <- readP_to_S (char 's') sec
     return (time, rest)
 
-axon :: Impulse i => IO (Axon (Chan i) i AxonConductive)
+axon :: Impulse i => IO (Axon (Chan i) AxonConductive)
 axon = do
  chan <- newChan
  return (Axon chan)
 
-axonAny :: IO (Axon (Chan i) AnyImpulse AxonConductive)
-axonAny = do
- chan <- newChan
- return (AxonAny chan)
-
-noAxon :: IO (Axon (Chan i) i AxonNotConductive)
+noAxon :: IO (Axon (Chan i) AxonNotConductive)
 noAxon = return NoAxon
 
-growNerve :: IO (Axon a a' b) -> IO (Axon c c' d) -> IO (Nerve a a' b c c' d)
+growNerve :: (Impulse from, Impulse for) => IO (Axon from fromConductivity) -> IO (Axon for forConductivity) -> IO (Nerve from fromConductivity for forConductivity)
 growNerve growFrom growFor = do
  from <- growFrom
  for <- growFor
@@ -303,11 +261,11 @@ growEnvironment = do
   
   return ()
 
-translateAndSend :: ImpulseTranslator i c => Nerve a a' b (Chan c) c' AxonConductive -> i -> IO ()
+translateAndSend :: ImpulseTranslator i for => Nerve from fromConductivity (Chan for) AxonConductive -> i -> IO ()
 translateAndSend nerve i = mapM_ (sendForNeuron nerve) $ translate i
 
 data Translatable i where
-  Translatable :: ImpulseTranslator i c => Nerve a a' b (Chan c) c' AxonConductive -> Translatable i
+  Translatable :: ImpulseTranslator i for => Nerve from fromConductivity (Chan for) AxonConductive -> Translatable i
 
 data Growable where
   Growable :: Neuron n => LiveNeuron n -> Growable
