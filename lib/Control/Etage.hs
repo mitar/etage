@@ -1,7 +1,7 @@
 module Control.Etage (
   module Control.Etage.Types,
-  module Control.Etage.Propagate
+  module Control.Etage.Incubator
 ) where
 
 import Control.Etage.Types
-import Control.Etage.Propagate
+import Control.Etage.Incubator

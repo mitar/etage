@@ -1,10 +1,10 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
 module Control.Etage.Types (
   Neuron(..),
   Impulse(..),
   AxonConductive,
-  AxonNotConductive,
+  AxonNonConductive,
   Axon(..),
   Nerve(..),
   sendFromNeuron,
@@ -28,15 +28,11 @@ module Control.Etage.Types (
   ImpulseTranslator(..),
   ImpulseTime,
   ImpulseValue,
-  axon,
-  noAxon,
-  growNerve,
   defaultOptions,
-  growEnvironment,
+  prepareEnvironment,
   translateAndSend,
   Translatable(..),
-  Growable(..),
-  growNeurons,
+  Living(..),
   waitForDissolve,
   getCurrentImpulseTime,
   impulseEq,
@@ -45,10 +41,12 @@ module Control.Etage.Types (
 
 import Prelude hiding (catch)
 
-import Control.Concurrent
+import Control.Concurrent hiding (Chan, writeChan, readChan, isEmptyChan)
+import Data.Data
+import Data.Function
+import Data.List
 import Control.Exception
 import Data.Time.Clock.POSIX
-import Data.Typeable
 import GHC.Conc (forkOnIO, numCapabilities)
 import Numeric
 import System.IO
@@ -56,78 +54,77 @@ import System.Posix.Signals
 import System.Random
 import Text.ParserCombinators.ReadP
 
+import Control.Etage.Chan
+
 -- TODO: Find better general representation for values (something analog to what a hologram is, so that it can be gradually simplified and gradually reconstructed)
 type ImpulseValue = [Rational]
 
 {-|
 Type class with common operations for impulses send over 'Nerve's and processed in 'Neuron's.
 -}
-class Show i => Impulse i where
+class (Show i, Typeable i) => Impulse i where
   impulseTime :: i -> ImpulseTime
   impulseValue :: i -> ImpulseValue
 
-data AxonConductive
-data AxonNotConductive
+data AxonConductive deriving Typeable
+data AxonNonConductive deriving Typeable
 
 data Axon impulse conductivity where
-  Axon :: Impulse i => Chan i -> Axon (Chan i) AxonConductive
-  NoAxon :: Axon (Chan i) AxonNotConductive
+  Axon :: Impulse i => Chan i -> Axon i AxonConductive
+  NoAxon :: Axon i AxonNonConductive
 
 data Nerve from fromConductivity for forConductivity where
   Nerve :: (Impulse from, Impulse for) => Axon from fromConductivity -> Axon for forConductivity -> Nerve from fromConductivity for forConductivity
 
-sendFromNeuron :: Nerve (Chan i) fromConductivity for forConductivity -> i -> IO ()
+sendFromNeuron :: Nerve from fromConductivity for forConductivity -> from -> IO ()
 sendFromNeuron (Nerve (Axon chan) _) i = writeChan chan i
 sendFromNeuron (Nerve NoAxon _) _ = return () -- we allow sending but ignore so that same Neuron defintion can be used on all kinds of Nerves
 
-getFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO i
+getFromNeuron :: Nerve from AxonConductive for forConductivity -> IO from
 getFromNeuron (Nerve (Axon chan) _) = readChan chan
 
-maybeGetFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO (Maybe i)
+maybeGetFromNeuron :: Nerve from AxonConductive for forConductivity -> IO (Maybe from)
 maybeGetFromNeuron (Nerve (Axon chan) _) = maybeReadChan chan
 
-slurpFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO [i]
+slurpFromNeuron :: Nerve from AxonConductive for forConductivity -> IO [from]
 slurpFromNeuron (Nerve (Axon chan) _) = slurpChan chan
 
-waitAndSlurpFromNeuron :: Nerve (Chan i) AxonConductive for forConductivity -> IO [i]
+waitAndSlurpFromNeuron :: Nerve from AxonConductive for forConductivity -> IO [from]
 waitAndSlurpFromNeuron nerve = do
   oldest <- getFromNeuron nerve
   others <- slurpFromNeuron nerve
   return $ others ++ [oldest]
 
-sendForNeuron :: Nerve from fromConductivity (Chan i) AxonConductive -> i -> IO ()
+sendForNeuron :: Nerve from fromConductivity for AxonConductive -> for -> IO ()
 sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
 
-getForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO i
+getForNeuron :: Nerve from fromConductivity for forConductivity -> IO for
 getForNeuron (Nerve _ (Axon chan)) = readChan chan
 getForNeuron (Nerve _ NoAxon) = waitForDissolve [] >> return undefined
 
-maybeGetForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO (Maybe i)
+maybeGetForNeuron :: Nerve from fromConductivity for forConductivity -> IO (Maybe for)
 maybeGetForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
 maybeGetForNeuron (Nerve _ NoAxon) = return Nothing -- we allow getting but return Nothing so that same Neuron defintion can be used on all kinds of Nerves
 
-slurpForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO [i]
+slurpForNeuron :: Nerve from fromConductivity for forConductivity -> IO [for]
 slurpForNeuron (Nerve _ (Axon chan)) = slurpChan chan
 slurpForNeuron (Nerve _ NoAxon) = return [] -- we allow getting but return [] so that same Neuron defintion can be used on all kinds of Nerves
 
-waitAndSlurpForNeuron :: Nerve from fromConductivity (Chan i) forConductivity -> IO [i]
+waitAndSlurpForNeuron :: Nerve from fromConductivity for forConductivity -> IO [for]
 waitAndSlurpForNeuron nerve = do
   oldest <- getForNeuron nerve
   others <- slurpForNeuron nerve
   return $ others ++ [oldest]
 
-{-
--- TODO: Enable in GHC 7.0
-getNewestForNeuron :: Data i => Nerve from fromConductivity (Chan i) forConductivity -> IO [i]
+getNewestForNeuron :: (Data for, Impulse for) => Nerve from fromConductivity for forConductivity -> IO [for]
 getNewestForNeuron nerve = do
   impulses <- waitAndSlurpForNeuron nerve
   return $ nubBy ((==) `on` toConstr) $ impulses
--}
 
 maybeReadChan :: Chan a -> IO (Maybe a)
 maybeReadChan chan = do
-  empty <- isEmptyChan chan
-  if empty
+  e <- isEmptyChan chan
+  if e
     then return Nothing
     else do
       c <- readChan chan
@@ -159,11 +156,15 @@ divideNeuron options a = fork a
                  NeuronFreelyMapOnCapability -> forkIO
                  NeuronMapOnCapability c     -> forkOnIO c
 
--- TODO: Add Data in Typeable requirements for NeuronForImpulse and NeuronFromImpulse in GHC 7.0
-class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n where
+deriving instance Typeable1 (NeuronFromImpulse)
+deriving instance Typeable1 (NeuronForImpulse)
+deriving instance Typeable1 (LiveNeuron)
+deriving instance Typeable1 (NeuronOptions)
+
+class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) => Neuron n where
   data LiveNeuron n
-  data NeuronForImpulse n
   data NeuronFromImpulse n
+  data NeuronForImpulse n
   data NeuronOptions n
 
   -- TODO: Once defaults for associated type synonyms are implemented change to that, if possible
@@ -177,9 +178,9 @@ class (Impulse (NeuronForImpulse n), Impulse (NeuronFromImpulse n)) => Neuron n 
 
   grow :: NeuronOptions n -> IO n
   dissolve :: n -> IO ()
-  live :: Nerve (Chan (NeuronFromImpulse n)) fromConductivity (Chan (NeuronForImpulse n)) forConductivity -> n -> IO ()
+  live :: Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> n -> IO ()
 
-  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (Chan (NeuronFromImpulse n)) fromConductivity (Chan (NeuronForImpulse n)) forConductivity -> IO (LiveNeuron n)
+  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO (LiveNeuron n)
   detach :: LiveNeuron n -> IO ()
 
   mkDefaultOptions = return undefined
@@ -232,25 +233,11 @@ instance Read ImpulseTime where
     ('s', rest) <- readP_to_S (char 's') sec
     return (time, rest)
 
-axon :: Impulse i => IO (Axon (Chan i) AxonConductive)
-axon = do
- chan <- newChan
- return (Axon chan)
-
-noAxon :: IO (Axon (Chan i) AxonNotConductive)
-noAxon = return NoAxon
-
-growNerve :: (Impulse from, Impulse for) => IO (Axon from fromConductivity) -> IO (Axon for forConductivity) -> IO (Nerve from fromConductivity for forConductivity)
-growNerve growFrom growFor = do
- from <- growFrom
- for <- growFor
- return $ Nerve from for
-
 defaultOptions :: Neuron n => NeuronOptions n -> NeuronOptions n
 defaultOptions = id
 
-growEnvironment :: IO ()
-growEnvironment = do
+prepareEnvironment :: IO ()
+prepareEnvironment = do
   hSetBuffering stderr LineBuffering
   
   mainThreadId <- myThreadId
@@ -261,29 +248,23 @@ growEnvironment = do
   
   return ()
 
-translateAndSend :: ImpulseTranslator i for => Nerve from fromConductivity (Chan for) AxonConductive -> i -> IO ()
+translateAndSend :: ImpulseTranslator i for => Nerve from fromConductivity for AxonConductive -> i -> IO ()
 translateAndSend nerve i = mapM_ (sendForNeuron nerve) $ translate i
 
 data Translatable i where
-  Translatable :: ImpulseTranslator i for => Nerve from fromConductivity (Chan for) AxonConductive -> Translatable i
+  Translatable :: ImpulseTranslator i for => Nerve from fromConductivity for AxonConductive -> Translatable i
 
-data Growable where
-  Growable :: Neuron n => LiveNeuron n -> Growable
-
--- TODO: Change this into a monad and use do notation?
-growNeurons :: [IO Growable] -> IO [Growable]
-growNeurons attaches = growNeurons' attaches []
-  where growNeurons' [] ls      = return ls
-        growNeurons' (a:ats) ls = bracketOnError a (\(Growable l) -> detach l) (\l -> growNeurons' ats (l:ls))
+data Living where
+  Living :: Neuron n => LiveNeuron n -> Living
 
 -- Blocks thread until an exception arrives and cleans-up afterwards, waiting for all threads to finish
 -- Should have MVar computations wrapped in uninterruptible and should not use any IO (because all this can be interrupted despite block)
-waitForDissolve :: [Growable] -> IO ()
+waitForDissolve :: [Living] -> IO ()
 waitForDissolve neurons = block $ do -- TODO: Change block to nonInterruptibleMask? Or remove?
   _ <- (newEmptyMVar >>= takeMVar) `finally` do
     -- TODO: Should also takeMVar go into detach? Or is better to first send exceptions and then wait?
-    mapM_ (\(Growable l) -> uninterruptible $ detach l) neurons
-    mapM_ (\(Growable l) -> uninterruptible $ takeMVar . getNeuronDissolved $ l) neurons
+    mapM_ (\(Living l) -> uninterruptible $ detach l) neurons
+    mapM_ (\(Living l) -> uninterruptible $ takeMVar . getNeuronDissolved $ l) neurons
   return ()
 
 -- TODO: Remove with GHC 7.0 and masks?

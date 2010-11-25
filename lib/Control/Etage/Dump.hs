@@ -1,27 +1,29 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
 module Control.Etage.Dump where
 
 import Control.Monad
+import Data.Typeable
 import System.IO
 
-import Control.Etage.Types
+import Control.Etage
 
-data DumpNeuron = DumpNeuron DumpOptions
+data DumpNeuron = DumpNeuron DumpOptions deriving (Typeable)
+
+type LiveDumpNeuron = LiveNeuron DumpNeuron
+type DumpFromImpulse = NeuronFromImpulse DumpNeuron
+type DumpForImpulse = NeuronForImpulse DumpNeuron
+type DumpOptions = NeuronOptions DumpNeuron
+
+instance Impulse DumpFromImpulse where
+  impulseTime _ = undefined
+  impulseValue _ = undefined
 
 instance Impulse DumpForImpulse where
   impulseTime (DumpForImpulse i) = impulseTime i
   impulseValue (DumpForImpulse i) = impulseValue i
 
--- TODO: Remove in favor of automatic deriving in GHC 7.0?
-instance Impulse DumpFromImpulse where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-type LiveDumpNeuron = LiveNeuron DumpNeuron
-type DumpForImpulse = NeuronForImpulse DumpNeuron
-type DumpFromImpulse = NeuronFromImpulse DumpNeuron
-type DumpOptions = NeuronOptions DumpNeuron
+deriving instance Show DumpFromImpulse
 
 instance Show DumpForImpulse where
   show (DumpForImpulse i) = show i
@@ -32,15 +34,11 @@ instance Eq DumpForImpulse where
 instance Ord DumpForImpulse where
   compare = impulseCompare
 
--- TODO: Remove in favor of automatic deriving in GHC 7.0?
-instance Show DumpFromImpulse where
-  show _ = undefined
-
 instance Neuron DumpNeuron where
   data LiveNeuron DumpNeuron = LiveDumpNeuron NeuronDissolved NeuronId
+  data NeuronFromImpulse DumpNeuron
   data NeuronForImpulse DumpNeuron where
     DumpForImpulse :: Impulse i => i -> DumpForImpulse
-  data NeuronFromImpulse DumpNeuron
   data NeuronOptions DumpNeuron = DumpOptions {
       handle :: Handle,
       showInsteadOfDump :: Bool
