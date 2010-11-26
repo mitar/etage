@@ -132,9 +132,9 @@ divideNeuron options a = fork a
                  NeuronFreelyMapOnCapability -> forkIO
                  NeuronMapOnCapability c     -> forkOnIO c
 
-deriving instance Typeable1 (NeuronFromImpulse)
-deriving instance Typeable1 (NeuronForImpulse)
-deriving instance Typeable1 (NeuronOptions)
+deriving instance Typeable1 NeuronFromImpulse
+deriving instance Typeable1 NeuronForImpulse
+deriving instance Typeable1 NeuronOptions
 
 class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) => Neuron n where
   data NeuronFromImpulse n

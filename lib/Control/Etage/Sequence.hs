@@ -18,7 +18,7 @@ import System.Random
 import Control.Etage
 
 defaultMaxInterval :: Int
-defaultMaxInterval = 1000000 -- microseconds
+defaultMaxInterval = 1000000 -- microseconds, 1 second
 
 data (Real r, Random r, Show r, Typeable r) => SequenceNeuron r = SequenceNeuron (SequenceOptions r) deriving (Typeable)
 
