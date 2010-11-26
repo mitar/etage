@@ -1,12 +1,11 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
-module Control.Etage.Types (
+module Control.Etage.Externals (
   Neuron(..),
   Impulse(..),
+  Nerve,
   AxonConductive,
   AxonNonConductive,
-  Axon(..),
-  Nerve(..),
   sendFromNeuron,
   getFromNeuron,
   maybeGetFromNeuron,
@@ -17,13 +16,14 @@ module Control.Etage.Types (
   maybeGetForNeuron,
   slurpForNeuron,
   waitAndSlurpForNeuron,
+  getNewestForNeuron,
   NeuronMapCapability(..),
   mkNeuronMapOnRandomCapability,
   NeuronDissolved,
   NeuronId,
-  DissolvingException(..),
+  DissolvingException,
   dissolving,
-  DissolveException(..),
+  DissolveException,
   dissolveNeuron,
   ImpulseTranslator(..),
   ImpulseTime,
@@ -32,14 +32,10 @@ module Control.Etage.Types (
   prepareEnvironment,
   translateAndSend,
   Translatable(..),
-  Living(..),
-  waitForDissolve,
   getCurrentImpulseTime,
   impulseEq,
   impulseCompare
 ) where
-
-import Prelude hiding (catch)
 
 import Control.Concurrent hiding (Chan, writeChan, readChan, isEmptyChan)
 import Data.Data
@@ -48,33 +44,12 @@ import Data.List
 import Control.Exception
 import Data.Time.Clock.POSIX
 import GHC.Conc (forkOnIO, numCapabilities)
-import Numeric
 import System.IO
 import System.Posix.Signals
 import System.Random
-import Text.ParserCombinators.ReadP
 
 import Control.Etage.Chan
-
--- TODO: Find better general representation for values (something analog to what a hologram is, so that it can be gradually simplified and gradually reconstructed)
-type ImpulseValue = [Rational]
-
-{-|
-Type class with common operations for impulses send over 'Nerve's and processed in 'Neuron's.
--}
-class (Show i, Typeable i) => Impulse i where
-  impulseTime :: i -> ImpulseTime
-  impulseValue :: i -> ImpulseValue
-
-data AxonConductive deriving Typeable
-data AxonNonConductive deriving Typeable
-
-data Axon impulse conductivity where
-  Axon :: Impulse i => Chan i -> Axon i AxonConductive
-  NoAxon :: Axon i AxonNonConductive
-
-data Nerve from fromConductivity for forConductivity where
-  Nerve :: (Impulse from, Impulse for) => Axon from fromConductivity -> Axon for forConductivity -> Nerve from fromConductivity for forConductivity
+import Control.Etage.Internals
 
 sendFromNeuron :: Nerve from fromConductivity for forConductivity -> from -> IO ()
 sendFromNeuron (Nerve (Axon chan) _) i = writeChan chan i
@@ -100,7 +75,7 @@ sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
 
 getForNeuron :: Nerve from fromConductivity for forConductivity -> IO for
 getForNeuron (Nerve _ (Axon chan)) = readChan chan
-getForNeuron (Nerve _ NoAxon) = waitForDissolve [] >> return undefined
+getForNeuron (Nerve _ NoAxon) = newEmptyMVar >>= takeMVar
 
 maybeGetForNeuron :: Nerve from fromConductivity for forConductivity -> IO (Maybe for)
 maybeGetForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
@@ -189,7 +164,7 @@ class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) 
 
   grow _ = return undefined
   dissolve _ = return ()
-  live _ _ = waitForDissolve []
+  live _ _ = newEmptyMVar >>= takeMVar
   
   -- TODO: Move default implementation out of the class so that it can be reused/wrapped around in some other class instance definition
   attach optionsSetter nerve = do
@@ -225,14 +200,6 @@ dissolveNeuron n = throwTo (getNeuronId n) DissolveException
 class (Impulse i, Impulse j) => ImpulseTranslator i j where
   translate :: i -> [j]
 
-type ImpulseTime = POSIXTime
-
-instance Read ImpulseTime where
-  readsPrec _ r = do
-    (time, sec) <- readFloat r
-    ('s', rest) <- readP_to_S (char 's') sec
-    return (time, rest)
-
 defaultOptions :: Neuron n => NeuronOptions n -> NeuronOptions n
 defaultOptions = id
 
@@ -253,24 +220,6 @@ translateAndSend nerve i = mapM_ (sendForNeuron nerve) $ translate i
 
 data Translatable i where
   Translatable :: ImpulseTranslator i for => Nerve from fromConductivity for AxonConductive -> Translatable i
-
-data Living where
-  Living :: Neuron n => LiveNeuron n -> Living
-
--- Blocks thread until an exception arrives and cleans-up afterwards, waiting for all threads to finish
--- Should have MVar computations wrapped in uninterruptible and should not use any IO (because all this can be interrupted despite block)
-waitForDissolve :: [Living] -> IO ()
-waitForDissolve neurons = block $ do -- TODO: Change block to nonInterruptibleMask? Or remove?
-  _ <- (newEmptyMVar >>= takeMVar) `finally` do
-    -- TODO: Should also takeMVar go into detach? Or is better to first send exceptions and then wait?
-    mapM_ (\(Living l) -> uninterruptible $ detach l) neurons
-    mapM_ (\(Living l) -> uninterruptible $ takeMVar . getNeuronDissolved $ l) neurons
-  return ()
-
--- TODO: Remove with GHC 7.0 and masks?
--- Big hack to prevent interruption: it simply retries interrupted computation
-uninterruptible :: IO a -> IO a
-uninterruptible a = block $ a `catch` (\(_ :: SomeException) -> uninterruptible a)
 
 getCurrentImpulseTime :: IO ImpulseTime
 getCurrentImpulseTime = getPOSIXTime

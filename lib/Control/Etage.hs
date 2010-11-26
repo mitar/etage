@@ -1,7 +1,7 @@
 module Control.Etage (
-  module Control.Etage.Types,
+  module Control.Etage.Externals,
   module Control.Etage.Incubator
 ) where
 
-import Control.Etage.Types
+import Control.Etage.Externals
 import Control.Etage.Incubator

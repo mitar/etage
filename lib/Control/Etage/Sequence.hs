@@ -1,6 +1,14 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, StandaloneDeriving, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
-module Control.Etage.Sequence where
+module Control.Etage.Sequence (
+  SequenceNeuron,
+  SequenceFromImpulse,
+  SequenceForImpulse,
+  SequenceOptions,
+  NeuronFromImpulse(..),
+  NeuronForImpulse,
+  NeuronOptions(..)
+) where
 
 import Control.Concurrent
 import Control.Monad
@@ -14,7 +22,6 @@ defaultMaxInterval = 1000000 -- microseconds
 
 data (Real r, Random r, Show r, Typeable r) => SequenceNeuron r = SequenceNeuron (SequenceOptions r) deriving (Typeable)
 
-type LiveSequenceNeuron r = LiveNeuron (SequenceNeuron r)
 type SequenceFromImpulse r = NeuronFromImpulse (SequenceNeuron r)
 type SequenceForImpulse r = NeuronForImpulse (SequenceNeuron r)
 type SequenceOptions r = NeuronOptions (SequenceNeuron r)

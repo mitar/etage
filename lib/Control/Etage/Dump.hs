@@ -1,6 +1,14 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
 
-module Control.Etage.Dump where
+module Control.Etage.Dump (
+  DumpNeuron,
+  DumpFromImpulse,
+  DumpForImpulse,
+  DumpOptions,
+  NeuronFromImpulse,
+  NeuronForImpulse(..),
+  NeuronOptions(..)
+) where
 
 import Control.Monad
 import Data.Typeable
@@ -10,7 +18,6 @@ import Control.Etage
 
 data DumpNeuron = DumpNeuron DumpOptions deriving (Typeable)
 
-type LiveDumpNeuron = LiveNeuron DumpNeuron
 type DumpFromImpulse = NeuronFromImpulse DumpNeuron
 type DumpForImpulse = NeuronForImpulse DumpNeuron
 type DumpOptions = NeuronOptions DumpNeuron

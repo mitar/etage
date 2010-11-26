@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE GADTs, FlexibleInstances, FlexibleContexts, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
 
 module Control.Etage.Incubator (
   incubate,
@@ -7,10 +7,14 @@ module Control.Etage.Incubator (
   NerveBoth,
   NerveNone,
   NerveOnlyFrom,
-  NerveOnlyFor
+  NerveOnlyFor,
+  Incubation
 ) where
 
+import Prelude hiding (catch)
+
 import Control.Applicative
+import Control.Concurrent hiding (Chan, newChan, dupChan)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Operational
@@ -21,24 +25,26 @@ import System.IO
 
 import Control.Etage.Chan
 import Control.Etage.Propagate
-import Control.Etage.Types
+import Control.Etage.Internals
+import Control.Etage.Externals
 
 data IncubationOperation a where
   NeuronOperation :: (Neuron n, GrowAxon (Axon (NeuronFromImpulse n) fromConductivity), GrowAxon (Axon (NeuronForImpulse n) forConductivity)) => (NeuronOptions n -> NeuronOptions n) -> IncubationOperation (Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity)
   AttachOperation :: forall from for forConductivity. (Typeable from, Typeable for, Typeable forConductivity) => Nerve from AxonConductive for forConductivity -> [Translatable from] -> IncubationOperation ()
 
-type Incubation a = ProgramT IncubationOperation IO a
+type Incubation' a = ProgramT IncubationOperation IO a
+newtype Incubation a = Incubation (Incubation' a) deriving (Monad, MonadIO, Applicative, Functor)
 
 -- TODO: Check if all chans have been attached with type checking? (If this checking even shows as useful. And correct.)
 incubate :: Incubation () -> IO ()
-incubate program = mask $ \restore -> do
+incubate (Incubation program) = mask $ \restore -> do
   (neurons, chans, attached) <- restore $ interpret [] [] [] program
   let na  = nub chans \\ nub attached
       typ = unlines . map (\(ChanBox c) -> show $ neuronTypeOf c) $ na
   unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created nerves were attached. This causes a memory leak as produced data is not consumed. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves for neurons:\n" ++ typ
   waitForDissolve neurons
 
-interpret :: [Living] -> [ChanBox] -> [ChanBox] -> Incubation () -> IO ([Living], [ChanBox], [ChanBox])
+interpret :: [Living] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([Living], [ChanBox], [ChanBox])
 interpret neurons chans attached = viewT >=> (eval neurons chans attached)
     where eval :: [Living] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([Living], [ChanBox], [ChanBox])
           eval ns cs ats (Return _) = return (ns, cs, ats)
@@ -57,10 +63,10 @@ interpret neurons chans attached = viewT >=> (eval neurons chans attached)
             (interpret ns cs ats') . is $ ()
 
 growNeuron :: (Neuron n, GrowAxon (Axon (NeuronFromImpulse n) fromConductivity), GrowAxon (Axon (NeuronForImpulse n) forConductivity)) => (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity)
-growNeuron os = singleton (NeuronOperation os)
+growNeuron os = Incubation $ singleton (NeuronOperation os)
 
 attachTo :: forall from for forConductivity. (Typeable from, Typeable for, Typeable forConductivity) => Nerve from AxonConductive for forConductivity -> [Translatable from] -> Incubation ()
-attachTo n ts = singleton (AttachOperation n ts)
+attachTo n ts = Incubation $ singleton (AttachOperation n ts)
 
 class GrowAxon a where
   growAxon :: IO a
@@ -102,3 +108,21 @@ dupNerve :: Nerve from AxonConductive for forConductivity -> IO (Nerve from Axon
 dupNerve (Nerve (Axon c) for) = do
   c' <- dupChan c
   return $ Nerve (Axon c') for
+
+data Living where
+  Living :: Neuron n => LiveNeuron n -> Living
+
+-- Blocks thread until an exception arrives and cleans-up afterwards, waiting for all threads to finish
+-- Should have MVar computations wrapped in uninterruptible and should not use any IO (because all this can be interrupted despite block)
+waitForDissolve :: [Living] -> IO ()
+waitForDissolve neurons = block $ do -- TODO: Change block to nonInterruptibleMask? Or remove?
+  _ <- (newEmptyMVar >>= takeMVar) `finally` do
+    -- TODO: Should also takeMVar go into detach? Or is better to first send exceptions and then wait?
+    mapM_ (\(Living l) -> uninterruptible $ detach l) neurons
+    mapM_ (\(Living l) -> uninterruptible $ takeMVar . getNeuronDissolved $ l) neurons
+  return ()
+
+-- TODO: Remove with GHC 7.0 and masks?
+-- Big hack to prevent interruption: it simply retries interrupted computation
+uninterruptible :: IO a -> IO a
+uninterruptible a = block $ a `catch` (\(_ :: SomeException) -> uninterruptible a)

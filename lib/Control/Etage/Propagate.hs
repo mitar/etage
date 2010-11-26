@@ -7,7 +7,8 @@ module Control.Etage.Propagate (
 import Control.Monad
 import Data.Typeable
 
-import Control.Etage.Types
+import Control.Etage.Internals
+import Control.Etage.Externals
 
 -- TODO: Implement delay in propagation (constant delay, random from some distribution)
 
