@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, StandaloneDeriving, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, StandaloneDeriving, EmptyDataDecls, NamedFieldPuns #-}
 
 module Control.Etage.Sequence (
   SequenceNeuron,
@@ -27,8 +27,8 @@ type SequenceForImpulse r = NeuronForImpulse (SequenceNeuron r)
 type SequenceOptions r = NeuronOptions (SequenceNeuron r)
 
 instance (Real r, Random r, Show r, Typeable r) => Impulse (SequenceFromImpulse r) where
-  impulseTime Value { .. } = impulseTimestamp
-  impulseValue Value { .. } = [toRational value]
+  impulseTime Value { impulseTimestamp } = impulseTimestamp
+  impulseValue Value { value } = [toRational value]
 
 instance (Real r, Random r, Show r, Typeable r) => Impulse (SequenceForImpulse r) where
   impulseTime _ = undefined
@@ -57,7 +57,7 @@ instance (Real r, Random r, Show r, Typeable r) => Neuron (SequenceNeuron r) whe
   
   grow options = return $ SequenceNeuron options
   
-  live nerve (SequenceNeuron SequenceOptions { .. }) = forM_ (zip valueSource intervalSource) $ \(v, i) -> do
+  live nerve (SequenceNeuron SequenceOptions { valueSource, intervalSource }) = forM_ (zip valueSource intervalSource) $ \(v, i) -> do
     time <- getCurrentImpulseTime
-    sendFromNeuron nerve $ Value time v
     threadDelay i
+    sendFromNeuron nerve $ Value time v

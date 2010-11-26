@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns #-}
 
 module Control.Etage.Worker (
   WorkerNeuron,
@@ -33,7 +33,7 @@ instance Impulse WorkerFromImpulse where
   impulseValue _ = undefined
 
 instance Impulse WorkerForImpulse where
-  impulseTime Work { .. } = impulseTimestamp
+  impulseTime Work { impulseTimestamp } = impulseTimestamp
   impulseValue _ = []
 
 deriving instance Show WorkerFromImpulse
@@ -57,5 +57,5 @@ instance Neuron WorkerNeuron where
   getNeuronMapCapability WorkerOptions { mapOnCapability } = mapOnCapability
   
   live nerve _ = forever $ do
-    Work { .. } <- head <$> waitAndSlurpForNeuron nerve
+    Work { work } <- head <$> waitAndSlurpForNeuron nerve
     work

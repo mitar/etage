@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns #-}
 
 module Control.Etage.Dump (
   DumpNeuron,
@@ -57,7 +57,7 @@ instance Neuron DumpNeuron where
   
   grow options = return $ DumpNeuron options
   
-  live nerve (DumpNeuron DumpOptions { .. }) = forever $ do
+  live nerve (DumpNeuron DumpOptions { handle, showInsteadOfDump }) = forever $ do
     i <- getForNeuron nerve
     if showInsteadOfDump
       then hPutStrLn handle $ show i

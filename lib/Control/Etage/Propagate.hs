@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
 
 module Control.Etage.Propagate (
   propagate
@@ -53,7 +53,7 @@ instance (Typeable from, Typeable for, Typeable forConductivity) => Neuron (Prop
   
   grow options = return $ PropagateNeuron options
   
-  live _ (PropagateNeuron PropagateOptions { .. }) = forever $ do
+  live _ (PropagateNeuron PropagateOptions { from, for }) = forever $ do
     i <- getFromNeuron from
     mapM_ (\(Translatable n) -> translateAndSend n i) for
 
