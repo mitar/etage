@@ -4,12 +4,17 @@ module Control.Etage.Internals (
   Axon(..),
   Nerve(..),
   Impulse(..),
+  LiveNeuron(..),
   ImpulseValue,
   ImpulseTime,
   AxonConductive,
-  AxonNonConductive
+  AxonNonConductive,
+  NeuronDissolved,
+  NeuronId,
+  waitForException
 ) where
 
+import Control.Concurrent hiding (Chan)
 import Data.Time.Clock.POSIX
 import Data.Typeable
 import Numeric
@@ -35,8 +40,8 @@ class (Show i, Typeable i) => Impulse i where
   impulseTime :: i -> ImpulseTime
   impulseValue :: i -> ImpulseValue
 
-data AxonConductive deriving Typeable
-data AxonNonConductive deriving Typeable
+data AxonConductive deriving (Typeable)
+data AxonNonConductive deriving (Typeable)
 
 data Axon impulse conductivity where
   Axon :: Impulse i => Chan i -> Axon i AxonConductive
@@ -44,3 +49,22 @@ data Axon impulse conductivity where
 
 data Nerve from fromConductivity for forConductivity where
   Nerve :: (Impulse from, Impulse for) => Axon from fromConductivity -> Axon for forConductivity -> Nerve from fromConductivity for forConductivity
+
+deriving instance Typeable4 Nerve
+
+instance (Typeable forConductivity, Typeable fromConductivity, Typeable from, Typeable for) => Show (Nerve from fromConductivity for forConductivity) where
+  show = show . typeOf
+
+type NeuronDissolved = MVar ()
+type NeuronId = ThreadId
+
+instance Show NeuronDissolved where
+  show = show . typeOf
+
+data LiveNeuron = LiveNeuron NeuronDissolved NeuronId deriving (Eq, Typeable)
+
+instance Show LiveNeuron where
+  show = show . typeOf
+
+waitForException :: IO a
+waitForException = newEmptyMVar >>= takeMVar

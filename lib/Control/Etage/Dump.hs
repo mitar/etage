@@ -42,7 +42,6 @@ instance Ord DumpForImpulse where
   compare = impulseCompare
 
 instance Neuron DumpNeuron where
-  data LiveNeuron DumpNeuron = LiveDumpNeuron NeuronDissolved NeuronId
   data NeuronFromImpulse DumpNeuron
   data NeuronForImpulse DumpNeuron where
     DumpForImpulse :: Impulse i => i -> DumpForImpulse
@@ -50,10 +49,6 @@ instance Neuron DumpNeuron where
       handle :: Handle,
       showInsteadOfDump :: Bool
     } deriving (Eq, Show)
-  
-  mkLiveNeuron = LiveDumpNeuron
-  getNeuronDissolved (LiveDumpNeuron dissolved _) = dissolved
-  getNeuronId (LiveDumpNeuron _ nid) = nid
   
   mkDefaultOptions = return DumpOptions {
       handle = stdout,

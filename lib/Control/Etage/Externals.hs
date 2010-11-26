@@ -6,6 +6,7 @@ module Control.Etage.Externals (
   Nerve,
   AxonConductive,
   AxonNonConductive,
+  LiveNeuron,
   sendFromNeuron,
   getFromNeuron,
   maybeGetFromNeuron,
@@ -19,12 +20,14 @@ module Control.Etage.Externals (
   getNewestForNeuron,
   NeuronMapCapability(..),
   mkNeuronMapOnRandomCapability,
-  NeuronDissolved,
-  NeuronId,
   DissolvingException,
   dissolving,
   DissolveException,
-  dissolveNeuron,
+  attach',
+  detach,
+  detachAndWait,
+  detachMany,
+  detachManyAndWait,
   ImpulseTranslator(..),
   ImpulseTime,
   ImpulseValue,
@@ -36,6 +39,8 @@ module Control.Etage.Externals (
   impulseEq,
   impulseCompare
 ) where
+
+import Prelude hiding (catch)
 
 import Control.Concurrent hiding (Chan, writeChan, readChan, isEmptyChan)
 import Data.Data
@@ -75,7 +80,7 @@ sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
 
 getForNeuron :: Nerve from fromConductivity for forConductivity -> IO for
 getForNeuron (Nerve _ (Axon chan)) = readChan chan
-getForNeuron (Nerve _ NoAxon) = newEmptyMVar >>= takeMVar
+getForNeuron (Nerve _ NoAxon) = waitForException
 
 maybeGetForNeuron :: Nerve from fromConductivity for forConductivity -> IO (Maybe for)
 maybeGetForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
@@ -121,10 +126,6 @@ mkNeuronMapOnRandomCapability = do
   c <- randomRIO (1, numCapabilities)
   return $ NeuronMapOnCapability c
 
-type NeuronDissolved = MVar ()
-type NeuronId = ThreadId
-
--- TODO: Move dissolved MVar handling into divideNeuron
 divideNeuron :: Neuron n => NeuronOptions n -> IO () -> IO NeuronId
 divideNeuron options a = fork a
   where fork = case getNeuronMapCapability options of
@@ -133,19 +134,12 @@ divideNeuron options a = fork a
 
 deriving instance Typeable1 (NeuronFromImpulse)
 deriving instance Typeable1 (NeuronForImpulse)
-deriving instance Typeable1 (LiveNeuron)
 deriving instance Typeable1 (NeuronOptions)
 
 class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) => Neuron n where
-  data LiveNeuron n
   data NeuronFromImpulse n
   data NeuronForImpulse n
   data NeuronOptions n
-
-  -- TODO: Once defaults for associated type synonyms are implemented change to that, if possible
-  mkLiveNeuron :: NeuronDissolved -> NeuronId -> LiveNeuron n
-  getNeuronDissolved :: LiveNeuron n -> NeuronDissolved
-  getNeuronId :: LiveNeuron n -> NeuronId
   
   mkDefaultOptions :: IO (NeuronOptions n)
   
@@ -155,8 +149,7 @@ class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) 
   dissolve :: n -> IO ()
   live :: Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> n -> IO ()
 
-  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO (LiveNeuron n)
-  detach :: LiveNeuron n -> IO ()
+  attach :: (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO LiveNeuron
 
   mkDefaultOptions = return undefined
 
@@ -164,24 +157,22 @@ class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) 
 
   grow _ = return undefined
   dissolve _ = return ()
-  live _ _ = newEmptyMVar >>= takeMVar
+  live _ _ = waitForException
   
-  -- TODO: Move default implementation out of the class so that it can be reused/wrapped around in some other class instance definition
-  attach optionsSetter nerve = do
-    currentThread <- myThreadId
-    dissolved <- newEmptyMVar
-    defOptions <- mkDefaultOptions
-    let options = optionsSetter defOptions
-        sequel = putMVar dissolved ()
-        run = do
-          bracket (grow options) dissolve (unblock . live nerve) `catches` [
-              Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
-              Handler (throwTo currentThread :: SomeException -> IO ())
-            ] `onException` sequel -- TODO: Change to finally in GHC 7.0
-          sequel
-    nid <- block $ divideNeuron options run -- TODO: Change block to nonInterruptibleMask? Or remove? Or move to divideNeuron?
-    return $ mkLiveNeuron dissolved nid
-  detach = dissolveNeuron
+  attach = attach'
+
+attach' :: Neuron n => (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO LiveNeuron
+attach' optionsSetter nerve = mask $ \restore -> do
+  currentThread <- myThreadId
+  dissolved <- newEmptyMVar
+  defOptions <- mkDefaultOptions
+  let options = optionsSetter defOptions
+  nid <- divideNeuron options $ do
+           bracket (grow options) dissolve (restore . live nerve) `catches` [ -- TODO: Should be dissolve wrapped in uninterruptibleMask
+               Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
+               Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
+             ] `finally` (uninterruptible $ putMVar dissolved ())
+  return $ LiveNeuron dissolved nid
 
 data DissolvingException = DissolvingException String deriving (Show, Typeable)
 
@@ -194,8 +185,24 @@ data DissolveException = DissolveException deriving (Show, Typeable)
 
 instance Exception DissolveException
 
-dissolveNeuron :: Neuron n => LiveNeuron n -> IO ()
-dissolveNeuron n = throwTo (getNeuronId n) DissolveException
+detach :: LiveNeuron -> IO ()
+detach (LiveNeuron _ neuronId) = mask_ . uninterruptible $ throwTo neuronId DissolveException
+
+detachAndWait :: LiveNeuron -> IO ()
+detachAndWait n = detachManyAndWait [n]
+
+detachMany :: [LiveNeuron] -> IO ()
+detachMany = mask_ . mapM_ detach
+
+detachManyAndWait :: [LiveNeuron] -> IO ()
+detachManyAndWait neurons = mask_ $ do
+  detachMany neurons
+  mapM_ (\(LiveNeuron d _) -> uninterruptible $ takeMVar d) neurons
+
+-- Some operations are interruptible, better than to make them uninterruptible (which can cause deadlocks) we simply retry interrupted operation
+-- For this to really work all interruptible operations should be wrapped like this (so it is not good idea to use IO operations in such code sections)
+uninterruptible :: IO a -> IO a
+uninterruptible a = mask_ $ a `catch` (\(_ :: SomeException) -> uninterruptible a)
 
 class (Impulse i, Impulse j) => ImpulseTranslator i j where
   translate :: i -> [j]
@@ -209,7 +216,7 @@ prepareEnvironment = do
   
   mainThreadId <- myThreadId
   
-  -- TODO: User interrupt sometimes hangs dissolving
+  -- TODO: User interrupt sometimes hangs dissolving (does it still in GHC 7.0?)
   _ <- installHandler keyboardSignal (Catch (throwTo mainThreadId UserInterrupt)) Nothing -- sigINT
   _ <- installHandler softwareTermination (Catch (throwTo mainThreadId UserInterrupt)) Nothing -- sigTERM
   

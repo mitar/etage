@@ -20,7 +20,7 @@ import Control.Etage
 type WorkType = IO ()
 
 instance Show WorkType where
-  show _ = "Work"
+  show = show . typeOf
 
 data WorkerNeuron deriving (Typeable)
 
@@ -39,7 +39,6 @@ instance Impulse WorkerForImpulse where
 deriving instance Show WorkerFromImpulse
 
 instance Neuron WorkerNeuron where
-  data LiveNeuron WorkerNeuron = LiveWorkerNeuron NeuronDissolved NeuronId
   data NeuronFromImpulse WorkerNeuron
   data NeuronForImpulse WorkerNeuron = Work {
       impulseTimestamp :: ImpulseTime,
@@ -48,10 +47,6 @@ instance Neuron WorkerNeuron where
   data NeuronOptions WorkerNeuron = WorkerOptions {
       mapOnCapability :: NeuronMapCapability
     } deriving (Eq, Ord, Read, Show)
-  
-  mkLiveNeuron = LiveWorkerNeuron
-  getNeuronDissolved (LiveWorkerNeuron dissolved _) = dissolved
-  getNeuronId (LiveWorkerNeuron _ nid) = nid
   
   mkDefaultOptions = do
     neuronMapCapability <- mkNeuronMapOnRandomCapability

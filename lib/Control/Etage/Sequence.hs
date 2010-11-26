@@ -37,7 +37,6 @@ instance (Real r, Random r, Show r, Typeable r) => Impulse (SequenceForImpulse r
 deriving instance Show (SequenceForImpulse r)
 
 instance (Real r, Random r, Show r, Typeable r) => Neuron (SequenceNeuron r) where
-  data LiveNeuron (SequenceNeuron r) = LiveSequenceNeuron NeuronDissolved NeuronId
   data NeuronFromImpulse (SequenceNeuron r) = Value {
       impulseTimestamp :: ImpulseTime, -- time is first so that ordering is first by time
       value :: r
@@ -47,10 +46,6 @@ instance (Real r, Random r, Show r, Typeable r) => Neuron (SequenceNeuron r) whe
       valueSource :: [r],
       intervalSource :: [Int] -- microseconds
     } deriving (Eq, Ord, Read, Show)
-  
-  mkLiveNeuron = LiveSequenceNeuron
-  getNeuronDissolved (LiveSequenceNeuron dissolved _) = dissolved
-  getNeuronId (LiveSequenceNeuron _ nid) = nid
   
   mkDefaultOptions = do
     generator <- newStdGen

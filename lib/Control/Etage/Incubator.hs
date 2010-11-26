@@ -8,13 +8,12 @@ module Control.Etage.Incubator (
   NerveNone,
   NerveOnlyFrom,
   NerveOnlyFor,
-  Incubation
+  Incubation,
+  -- * Internals
+  growNerve
 ) where
 
-import Prelude hiding (catch)
-
 import Control.Applicative
-import Control.Concurrent hiding (Chan, newChan, dupChan)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Operational
@@ -39,19 +38,20 @@ newtype Incubation a = Incubation (Incubation' a) deriving (Monad, MonadIO, Appl
 incubate :: Incubation () -> IO ()
 incubate (Incubation program) = mask $ \restore -> do
   (neurons, chans, attached) <- restore $ interpret [] [] [] program
-  let na  = nub chans \\ nub attached
-      typ = unlines . map (\(ChanBox c) -> show $ neuronTypeOf c) $ na
-  unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created nerves were attached. This causes a memory leak as produced data is not consumed. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves for neurons:\n" ++ typ
-  waitForDissolve neurons
+  (flip finally) (detachManyAndWait neurons) $ do
+    let na = nub chans \\ nub attached
+        typ = unlines . map (\(ChanBox c) -> show $ neuronTypeOf c) $ na
+    unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created nerves were attached. This causes a memory leak as produced data is not consumed. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves for neurons:\n" ++ typ
+    restore waitForException
 
-interpret :: [Living] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([Living], [ChanBox], [ChanBox])
+interpret :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
 interpret neurons chans attached = viewT >=> (eval neurons chans attached)
-    where eval :: [Living] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([Living], [ChanBox], [ChanBox])
+    where eval :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
           eval ns cs ats (Return _) = return (ns, cs, ats)
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
             nerve <- liftIO $ growNerve
             let c = getFromChan nerve
-            bracketOnError (attach optionsSetter nerve) detach $ \n -> (interpret ((Living n):ns) (c ++ cs) ats) . is $ nerve
+            bracketOnError (attach optionsSetter nerve) detach $ \n -> (interpret (n:ns) (c ++ cs) ats) . is $ nerve
           eval ns cs ats (AttachOperation from for :>>= is) = do
             let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
             (from', ats') <- if c `notElem` ats
@@ -108,21 +108,3 @@ dupNerve :: Nerve from AxonConductive for forConductivity -> IO (Nerve from Axon
 dupNerve (Nerve (Axon c) for) = do
   c' <- dupChan c
   return $ Nerve (Axon c') for
-
-data Living where
-  Living :: Neuron n => LiveNeuron n -> Living
-
--- Blocks thread until an exception arrives and cleans-up afterwards, waiting for all threads to finish
--- Should have MVar computations wrapped in uninterruptible and should not use any IO (because all this can be interrupted despite block)
-waitForDissolve :: [Living] -> IO ()
-waitForDissolve neurons = block $ do -- TODO: Change block to nonInterruptibleMask? Or remove?
-  _ <- (newEmptyMVar >>= takeMVar) `finally` do
-    -- TODO: Should also takeMVar go into detach? Or is better to first send exceptions and then wait?
-    mapM_ (\(Living l) -> uninterruptible $ detach l) neurons
-    mapM_ (\(Living l) -> uninterruptible $ takeMVar . getNeuronDissolved $ l) neurons
-  return ()
-
--- TODO: Remove with GHC 7.0 and masks?
--- Big hack to prevent interruption: it simply retries interrupted computation
-uninterruptible :: IO a -> IO a
-uninterruptible a = block $ a `catch` (\(_ :: SomeException) -> uninterruptible a)
