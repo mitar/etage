@@ -38,20 +38,20 @@ newtype Incubation a = Incubation (Incubation' a) deriving (Monad, MonadIO, Appl
 incubate :: Incubation () -> IO ()
 incubate (Incubation program) = mask $ \restore -> do
   (neurons, chans, attached) <- restore $ interpret [] [] [] program
-  (flip finally) (detachManyAndWait neurons) $ do
+  flip finally (detachManyAndWait neurons) $ do
     let na = nub chans \\ nub attached
         typ = unlines . map (\(ChanBox c) -> show $ neuronTypeOf c) $ na
     unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created nerves were attached. This causes a memory leak as produced data is not consumed. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves for neurons:\n" ++ typ
     restore waitForException
 
 interpret :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
-interpret neurons chans attached = viewT >=> (eval neurons chans attached)
+interpret neurons chans attached = viewT >=> eval neurons chans attached
     where eval :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
           eval ns cs ats (Return _) = return (ns, cs, ats)
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
-            nerve <- liftIO $ growNerve
+            nerve <- liftIO growNerve
             let c = getFromChan nerve
-            bracketOnError (attach optionsSetter nerve) detach $ \n -> (interpret (n:ns) (c ++ cs) ats) . is $ nerve
+            bracketOnError (attach optionsSetter nerve) detach $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
           eval ns cs ats (AttachOperation from for :>>= is) = do
             let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
             (from', ats') <- if c `notElem` ats
@@ -60,7 +60,7 @@ interpret neurons chans attached = viewT >=> (eval neurons chans attached)
                                  dupFrom <- dupNerve from -- we have to duplicate from chan as it is attached multiple times
                                  return (dupFrom, ats) -- we store only original nerves in attached list
             propagate from' for
-            (interpret ns cs ats') . is $ ()
+            interpret ns cs ats' . is $ ()
 
 growNeuron :: (Neuron n, GrowAxon (Axon (NeuronFromImpulse n) fromConductivity), GrowAxon (Axon (NeuronForImpulse n) forConductivity)) => (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity)
 growNeuron os = Incubation $ singleton (NeuronOperation os)

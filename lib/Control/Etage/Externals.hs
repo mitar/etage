@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
 
 module Control.Etage.Externals (
   Neuron(..),
@@ -76,7 +76,7 @@ waitAndSlurpFromNeuron nerve = do
   return $ others ++ [oldest]
 
 sendForNeuron :: Nerve from fromConductivity for AxonConductive -> for -> IO ()
-sendForNeuron (Nerve _ (Axon chan)) i = writeChan chan i
+sendForNeuron (Nerve _ (Axon chan)) = writeChan chan
 
 getForNeuron :: Nerve from fromConductivity for forConductivity -> IO for
 getForNeuron (Nerve _ (Axon chan)) = readChan chan
@@ -99,7 +99,7 @@ waitAndSlurpForNeuron nerve = do
 getNewestForNeuron :: (Data for, Impulse for) => Nerve from fromConductivity for forConductivity -> IO [for]
 getNewestForNeuron nerve = do
   impulses <- waitAndSlurpForNeuron nerve
-  return $ nubBy ((==) `on` toConstr) $ impulses
+  return $ nubBy ((==) `on` toConstr) impulses
 
 maybeReadChan :: Chan a -> IO (Maybe a)
 maybeReadChan chan = do
@@ -167,11 +167,11 @@ attach' optionsSetter nerve = mask $ \restore -> do
   dissolved <- newEmptyMVar
   defOptions <- mkDefaultOptions
   let options = optionsSetter defOptions
-  nid <- divideNeuron options $ do
+  nid <- divideNeuron options $
            bracket (grow options) dissolve (restore . live nerve) `catches` [ -- TODO: Should be dissolve wrapped in uninterruptibleMask
                Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
                Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
-             ] `finally` (uninterruptible $ putMVar dissolved ())
+             ] `finally` uninterruptible (putMVar dissolved ())
   return $ LiveNeuron dissolved nid
 
 data DissolvingException = DissolvingException String deriving (Show, Typeable)
