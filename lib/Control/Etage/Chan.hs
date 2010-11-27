@@ -25,6 +25,7 @@ module Control.Etage.Chan
         newChan,                -- :: IO (Chan a)
         writeChan,              -- :: Chan a -> a -> IO ()
         readChan,               -- :: Chan a -> IO a
+        tryReadChan,            -- :: Chan a -> IO (Maybe a)
         dupChan,                -- :: Chan a -> IO (Chan a)
         unGetChan,              -- :: Chan a -> a -> IO ()
         isEmptyChan,            -- :: Chan a -> IO Bool
@@ -39,6 +40,8 @@ import Prelude
 import System.IO.Unsafe         ( unsafeInterleaveIO )
 import Control.Concurrent.MVar
 import Data.Typeable
+
+import Control.Exception.Base
 
 -- A channel is represented by two @MVar@s keeping track of the two ends
 -- of the channel contents,i.e.,  the read- and write ends. Empty @MVar@s
@@ -89,6 +92,48 @@ readChan (Chan readVar _) = do
         -- Use readMVar here, not takeMVar,
         -- else dupChan doesn't work
     return (new_read_end, val)
+
+{-|
+  A semi-non-blocking version of 'readMVar'. The 'tryReadMVar' function returns immediately, with 'Nothing' if the 'MVar' was empty, or
+  @'Just' a@ if the 'MVar' was full with contents @a@, after it put the value back (it can block at this stage).
+-}
+tryReadMVar :: MVar a -> IO (Maybe a)
+tryReadMVar m =
+  mask_ $ do
+    a <- tryTakeMVar m
+    case a of
+      Nothing -> return Nothing
+      Just a' -> do
+        putMVar m a'
+        return $ Just a'
+
+{-|
+  A semi-non-blocking version of 'modifyMVar'. The 'tryModifyMVar' function returns immediately, with 'Nothing' if the 'MVar' was empty, or
+  behave as 'modifyMVar' otherwise. This means that it can still block while putting the original (on exception) or new value (otherwise) back.
+-}
+{-# INLINE tryModifyMVar #-}
+tryModifyMVar :: MVar a -> (a -> IO (a, Maybe b)) -> IO (Maybe b)
+tryModifyMVar m io =
+  mask $ \restore -> do
+    a <- tryTakeMVar m
+    case a of
+      Nothing -> return Nothing
+      Just a' -> do
+        (a'', b) <- restore (io a') `onException` putMVar m a'
+        putMVar m a''
+        return b
+
+-- |A non-blocking version of 'readChan'. The 'tryReadChan' function returns immediately, with 'Nothing' if the 'Chan' was empty or would
+-- block, or @'Just' a@ with the next value from the 'Chan', otherwise.
+tryReadChan :: Chan a -> IO (Maybe a)
+tryReadChan (Chan readVar _) = do
+  tryModifyMVar readVar $ \read_end -> do
+    item <- tryReadMVar read_end
+        -- Use tryReadMVar here, not tryTakeMVar,
+        -- else dupChan doesn't work
+    case item of
+      Nothing -> return (read_end, Nothing)
+      Just (ChItem val new_read_end) -> return (new_read_end, Just val)
 
 -- |Duplicate a 'Chan': the duplicate channel begins empty, but data written to
 -- either channel from then on will be available from both.  Hence this creates

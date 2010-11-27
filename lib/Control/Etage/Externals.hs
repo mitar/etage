@@ -64,7 +64,7 @@ getFromNeuron :: Nerve from AxonConductive for forConductivity -> IO from
 getFromNeuron (Nerve (Axon chan) _) = readChan chan
 
 maybeGetFromNeuron :: Nerve from AxonConductive for forConductivity -> IO (Maybe from)
-maybeGetFromNeuron (Nerve (Axon chan) _) = maybeReadChan chan
+maybeGetFromNeuron (Nerve (Axon chan) _) = tryReadChan chan
 
 slurpFromNeuron :: Nerve from AxonConductive for forConductivity -> IO [from]
 slurpFromNeuron (Nerve (Axon chan) _) = slurpChan chan
@@ -83,7 +83,7 @@ getForNeuron (Nerve _ (Axon chan)) = readChan chan
 getForNeuron (Nerve _ NoAxon) = waitForException
 
 maybeGetForNeuron :: Nerve from fromConductivity for forConductivity -> IO (Maybe for)
-maybeGetForNeuron (Nerve _ (Axon chan)) = maybeReadChan chan
+maybeGetForNeuron (Nerve _ (Axon chan)) = tryReadChan chan
 maybeGetForNeuron (Nerve _ NoAxon) = return Nothing -- we allow getting but return Nothing so that same Neuron defintion can be used on all kinds of Nerves
 
 slurpForNeuron :: Nerve from fromConductivity for forConductivity -> IO [for]
@@ -101,20 +101,11 @@ getNewestForNeuron nerve = do
   impulses <- waitAndSlurpForNeuron nerve
   return $ nubBy ((==) `on` toConstr) impulses
 
-maybeReadChan :: Chan a -> IO (Maybe a)
-maybeReadChan chan = do
-  e <- isEmptyChan chan
-  if e
-    then return Nothing
-    else do
-      c <- readChan chan
-      return $ Just c
-
 -- First-in (oldest) element in the channel is last in the list
 slurpChan :: Chan a -> IO [a]
 slurpChan chan = slurpChan' []
   where slurpChan' cs = do
-          mc <- maybeReadChan chan
+          mc <- tryReadChan chan
           case mc of
             Nothing -> return cs
             Just c  -> slurpChan' (c:cs)
@@ -164,14 +155,14 @@ class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) 
 attach' :: Neuron n => (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO LiveNeuron
 attach' optionsSetter nerve = mask $ \restore -> do
   currentThread <- myThreadId
-  dissolved <- newEmptyMVar
+  dissolved <- newEmptySampleVar
   defOptions <- mkDefaultOptions
   let options = optionsSetter defOptions
   nid <- divideNeuron options $
            bracket (grow options) dissolve (restore . live nerve) `catches` [ -- TODO: Should be dissolve wrapped in uninterruptibleMask
                Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
                Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
-             ] `finally` uninterruptible (putMVar dissolved ())
+             ] `finally` uninterruptible (writeSampleVar dissolved ())
   return $ LiveNeuron dissolved nid
 
 data DissolvingException = DissolvingException String deriving (Show, Typeable)
@@ -197,7 +188,7 @@ detachMany = mask_ . mapM_ detach
 detachManyAndWait :: [LiveNeuron] -> IO ()
 detachManyAndWait neurons = mask_ $ do
   detachMany neurons
-  mapM_ (\(LiveNeuron d _) -> uninterruptible $ takeMVar d) neurons
+  mapM_ (\(LiveNeuron d _) -> uninterruptible $ readSampleVar d) neurons
 
 -- Some operations are interruptible, better than to make them uninterruptible (which can cause deadlocks) we simply retry interrupted operation
 -- For this to really work all interruptible operations should be wrapped like this (so it is not good idea to use IO operations in such code sections)

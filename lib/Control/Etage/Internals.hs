@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Control.Etage.Internals (
   Axon(..),
@@ -55,8 +56,10 @@ deriving instance Typeable4 Nerve
 instance (Typeable forConductivity, Typeable fromConductivity, Typeable from, Typeable for) => Show (Nerve from fromConductivity for forConductivity) where
   show = show . typeOf
 
-type NeuronDissolved = MVar ()
+type NeuronDissolved = SampleVar ()
 type NeuronId = ThreadId
+
+deriving instance Typeable1 SampleVar
 
 instance Show NeuronDissolved where
   show = show . typeOf
