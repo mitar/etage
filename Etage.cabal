@@ -33,7 +33,8 @@ Library
                        Control.Etage.Sequence,
                        Control.Etage.Worker,
                        Control.Etage.Timeout,
-                       Control.Etage.Function
+                       Control.Etage.Function,
+                       Control.Etage.Fail
   Build-depends:       base >= 4.3 && < 5,
                        mtl >= 1.1 && < 3,
                        random > 1.0 && < 2,

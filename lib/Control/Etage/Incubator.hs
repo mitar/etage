@@ -34,13 +34,13 @@ data IncubationOperation a where
 type Incubation' a = ProgramT IncubationOperation IO a
 newtype Incubation a = Incubation (Incubation' a) deriving (Monad, MonadIO, Applicative, Functor)
 
--- TODO: Check if all chans have been attached with type checking? (If this checking even shows as useful. And correct.)
+-- TODO: Check if all chans have been attached with type checking (type nats)? (If this checking even shows as useful. And correct.)
 incubate :: Incubation () -> IO ()
 incubate (Incubation program) = mask $ \restore -> do
   (neurons, chans, attached) <- restore $ interpret [] [] [] program
   flip finally (detachManyAndWait neurons) $ do
     let na = nub chans \\ nub attached
-        typ = unlines . map (\(ChanBox c) -> show $ neuronTypeOf c) $ na
+        typ = unlines . map (\(ChanBox c) -> ' ':(show $ neuronTypeOf c)) $ na
     unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created nerves were attached. This causes a memory leak as produced data is not consumed. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves for neurons:\n" ++ typ
     restore waitForException
 
@@ -51,7 +51,7 @@ interpret neurons chans attached = viewT >=> eval neurons chans attached
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
             nerve <- liftIO growNerve
             let c = getFromChan nerve
-            bracketOnError (attach optionsSetter nerve) detach $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
+            bracketOnError (attach optionsSetter nerve) detachAndWait $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
           eval ns cs ats (AttachOperation from for :>>= is) = do
             let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
             (from', ats') <- if c `notElem` ats

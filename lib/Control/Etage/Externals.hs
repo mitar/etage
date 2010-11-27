@@ -159,7 +159,7 @@ attach' optionsSetter nerve = mask $ \restore -> do
   defOptions <- mkDefaultOptions
   let options = optionsSetter defOptions
   nid <- divideNeuron options $
-           bracket (grow options) dissolve (restore . live nerve) `catches` [ -- TODO: Should be dissolve wrapped in uninterruptibleMask
+           bracket (grow options) dissolve (restore . live nerve) `catches` [
                Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
                Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
              ] `finally` uninterruptible (writeSampleVar dissolved ())
