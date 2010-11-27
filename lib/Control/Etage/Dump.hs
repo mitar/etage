@@ -58,7 +58,7 @@ instance Neuron DumpNeuron where
   grow options = return $ DumpNeuron options
   
   live nerve (DumpNeuron DumpOptions { handle, showInsteadOfDump }) = forever $ do
-    i <- getForNeuron nerve
+    i <- getForNeuron nerve -- we want all not just newest
     if showInsteadOfDump
       then hPutStrLn handle $ show i
       else hPutStrLn handle $ show (impulseTime i) ++ ": " ++ show (impulseValue i)

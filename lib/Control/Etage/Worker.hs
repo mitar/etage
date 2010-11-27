@@ -57,5 +57,5 @@ instance Neuron WorkerNeuron where
   getNeuronMapCapability WorkerOptions { mapOnCapability } = mapOnCapability
   
   live nerve _ = forever $ do
-    Work { work } <- head <$> waitAndSlurpForNeuron nerve
+    Work { work } <- head <$> waitAndSlurpForNeuron nerve -- just newest
     work

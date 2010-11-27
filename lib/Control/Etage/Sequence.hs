@@ -58,6 +58,6 @@ instance (Real r, Random r, Show r, Typeable r) => Neuron (SequenceNeuron r) whe
   grow options = return $ SequenceNeuron options
   
   live nerve (SequenceNeuron SequenceOptions { valueSource, intervalSource }) = forM_ (zip valueSource intervalSource) $ \(v, i) -> do
-    time <- getCurrentImpulseTime
     threadDelay i
+    time <- getCurrentImpulseTime
     sendFromNeuron nerve $ Value time v
