@@ -41,18 +41,15 @@ Type class with common methods for impulses send over 'Nerve's and processed in 
 'Neuron's which operate on any 'Impulse' type. An example of such 'Neuron' is "Control.Etage.Function".
 -}
 class (Show i, Typeable i) => Impulse i where
-  -- | This method should return a timestamp when the 'Impulse' was created/finalized what should be the moment just before it is send over
-  -- the 'Nerve'. So the moment it formed into its final form and started leaving the 'Neuron'.
+  -- | This method should return a timestamp when the 'Impulse' was created/finalized what should be the moment just before it is send
+  -- over the 'Nerve', the moment it formed into its final form and started leaving the 'Neuron'. As Haskell is a lazy language this
+  -- does not mean that at that moment all values the 'Impulse' defines are really already evaluated (they are evaluated when they are
+  -- needed, probably in some other 'Neuron').
   --
-  -- Be careful that Haskell is a lazy language so such code:
+  -- You can do something like:
   --
-  -- > let v = lengthlyComputation
   -- > time <- getCurrentImpulseTime
-  -- > sendFromNeuron nerve Value { impulseTimestamp = time, value = v }
-  --
-  -- will evaluate @v@ after 'getCurrentImpulseTime' call. You should make @v@ strict (using @BangPatterns@) like:
-  --
-  -- > let !v = lengthlyComputation
+  -- > sendFromNeuron nerve YourImpulse { impulseTimestamp = time, ... }
   impulseTime :: i -> ImpulseTime
   -- | This method should return all values (data payload) the 'Impulse' defines. Currently order and format is not yet finalized so
   -- it is just a list of 'Rational' values in some order (for now it probably should be the order in which the values are defined

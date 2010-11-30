@@ -1,8 +1,9 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, NamedFieldPuns, BangPatterns #-}
 
 {-|
-This module defines a 'Neuron' which sends results of applying a given function to recieved 'Impulse's. You 'grow' it in
-'Incubation' by using something like:
+This module defines a 'Neuron' which applies a given function to received 'Impulse's. As Haskell is a lazy language this does
+not mean that the result will be immediately evaluated but that it will be evaluated when (and if) the result will be needed
+(probably in some other 'Neuron'). You 'grow' it in 'Incubation' by using something like:
 
 > nerveFunction <- growNeuron (\o -> o { function = negate . sum }) :: NerveBoth FunctionNeuron
 
@@ -21,7 +22,6 @@ module Control.Etage.Function (
 
 import Control.Applicative
 import Control.Monad
-import Data.Time.Clock
 import Data.Typeable
 
 import Control.Etage
@@ -37,9 +37,8 @@ instance Show FunctionNeuron where
 {-|
 'Impulse's from 'FunctionNeuron'. This 'Impulse' constructor is defined:
 
-[@Value { impulseTimestamp :: 'ImpulseTime', value :: 'Rational', evaluationTime :: 'NominalDiffTime' }@]
-@impulseTimestamp@ is time when the result was evaluated, @value@ contains the evaluated result, @evaluationTime@ is how long the
-evaluation took.
+[@Value { impulseTimestamp :: 'ImpulseTime', value :: 'Rational' }@]
+@impulseTimestamp@ is time when the function was applied (but not when the result was evaluated), @value@ contains the (lazy) result.
 -}
 type FunctionFromImpulse = NeuronFromImpulse FunctionNeuron
 -- | 'Impulse's for 'FunctionNeuron'. This 'Neuron' can recieve any 'Impulse' type.
@@ -70,12 +69,11 @@ instance Eq FunctionForImpulse where
 instance Ord FunctionForImpulse where
   compare = impulseCompare
 
--- | A 'Neuron' which sends results of a given function for recieved 'Impulse's.
+-- | A 'Neuron' which applies a given function to received 'Impulse's.
 instance Neuron FunctionNeuron where
   data NeuronFromImpulse FunctionNeuron = Value {
       impulseTimestamp :: ImpulseTime, -- time is first so that ordering is first by time
-      value :: Rational,
-      evaluationTime :: NominalDiffTime
+      value :: Rational
     } deriving (Eq, Ord, Read, Show)
   data NeuronForImpulse FunctionNeuron where
     FunctionForImpulse :: Impulse i => i -> FunctionForImpulse
@@ -91,10 +89,9 @@ instance Neuron FunctionNeuron where
   
   live nerve (FunctionNeuron FunctionOptions { function }) = forever $ do
     i <- head <$> waitAndSlurpForNeuron nerve -- just newest
-    time1 <- getCurrentImpulseTime
-    let !r = function . impulseValue $ i
-    time2 <- getCurrentImpulseTime
-    sendFromNeuron nerve Value { impulseTimestamp = time2, value = r, evaluationTime = time2 - time1 }
+    let r = function . impulseValue $ i
+    time <- getCurrentImpulseTime
+    sendFromNeuron nerve Value { impulseTimestamp = time, value = r }
 
 instance Impulse i => ImpulseTranslator i FunctionForImpulse where
   translate i = [FunctionForImpulse i]
