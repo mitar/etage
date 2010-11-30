@@ -1,5 +1,5 @@
 Name:                Etage
-Version:             0.1.1
+Version:             0.1.2
 Synopsis:            A general data-flow framework
 Description:         A general data-flow framework featuring nondeterminism, laziness and neurological pseudo-terminology. It can be
                      used for example for data-flow computations or event propagation networks. It tries hard to aide type checking and to
@@ -41,7 +41,7 @@ Library
                        unix >= 2.4 && < 3,
                        time >= 1.1 && < 2,
                        operational >= 0.2 && < 1,
-                       ghc >= 7.0.2
+                       ghc >= 7.0.1
   Other-modules:       Control.Etage.Internals,
                        Control.Etage.Externals,
                        Control.Etage.Propagate,
