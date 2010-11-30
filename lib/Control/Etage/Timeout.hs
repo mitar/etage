@@ -1,5 +1,14 @@
 {-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, StandaloneDeriving, NamedFieldPuns #-}
 
+{-|
+This module defines a simple 'Neuron' which initiates 'dissolving' after a given delay. It can be used to limit execution time of
+the network. You 'grow' it in 'Incubation' by using something like:
+
+> _ <- growNeuron defaultOptions :: NerveNone TimeoutNeuron
+
+somewhere among (best at the end) 'growNeuron' calls for other 'Neuron's in 'Incubation'.
+-}
+
 module Control.Etage.Timeout (
   TimeoutNeuron,
   TimeoutFromImpulse,
@@ -17,21 +26,30 @@ import Data.Typeable
 import Control.Etage
 
 defaultTimeout :: Int
-defaultTimeout = 10000000 -- microseconds, 10 seconds
+defaultTimeout = 60000000 -- microseconds, 60 seconds
 
 data TimeoutNeuron = TimeoutNeuron TimeoutOptions deriving (Typeable)
 
 instance Show TimeoutNeuron where
   show = show . typeOf
 
+-- | 'Impulse's from 'TimeoutNeuron'. This 'Neuron' does not define any 'Impulse's it would send.
 type TimeoutFromImpulse = NeuronFromImpulse TimeoutNeuron
+-- | 'Impulse's for 'TimeoutNeuron'. This 'Neuron' does not define any 'Impulse's it would receive.
 type TimeoutForImpulse = NeuronForImpulse TimeoutNeuron
+{-|
+Options for 'TimeoutNeuron'. This option is defined:
+
+[@timeout :: 'Int'@] The length of the delay in microseconds before initiating 'dissolving'. Default is 60 seconds.
+-}
 type TimeoutOptions = NeuronOptions TimeoutNeuron
 
+-- | Impulse instance for 'TimeoutNeuron'.
 instance Impulse TimeoutFromImpulse where
   impulseTime _ = undefined
   impulseValue _ = undefined
 
+-- | Impulse instance for 'TimeoutNeuron'.
 instance Impulse TimeoutForImpulse where
   impulseTime _ = undefined
   impulseValue _ = undefined
@@ -39,6 +57,7 @@ instance Impulse TimeoutForImpulse where
 deriving instance Show TimeoutFromImpulse
 deriving instance Show TimeoutForImpulse
 
+-- | A simple 'Neuron' which initiates 'dissolving' after a given delay.
 instance Neuron TimeoutNeuron where
   data NeuronFromImpulse TimeoutNeuron
   data NeuronForImpulse TimeoutNeuron

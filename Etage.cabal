@@ -15,7 +15,7 @@ Description:         A general data-flow framework featuring nondeterminism and 
                      This framework is in fact just a simple abstraction of Haskell threads and data passing between them through
                      channels with threads' initialization and cleanup wrapped into a Haskell type class.
                      .
-                     Feel free to contribute or suggest additional features or (example) programs.
+                     Feel free to contribute or suggest additional features or (example) programs or to create interfaces to other modules.
 License:             LGPL-3
 License-file:        LICENSE
 Author:              Mitar Milutinovic
