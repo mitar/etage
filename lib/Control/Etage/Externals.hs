@@ -56,7 +56,8 @@ module Control.Etage.Externals (
   prepareEnvironment,
   getCurrentImpulseTime,
   impulseEq,
-  impulseCompare
+  impulseCompare,
+  bracketOnErrorUnmasked
 ) where
 
 import Prelude hiding (catch)
@@ -428,3 +429,12 @@ Useful for 'Neuron's which operate on all types of 'Impulse's and want 'Ord' def
 -}
 impulseCompare :: (Impulse i, Impulse j) => i -> j -> Ordering
 impulseCompare a b = (impulseTime a, impulseValue a) `compare` (impulseTime b, impulseValue b)
+
+{-|
+Similar to 'bracketOnError' only that the first computation does not have asynchronous exceptions masked.
+-}
+bracketOnErrorUnmasked :: IO a -> (a -> IO b) -> (a -> IO c) -> IO c
+bracketOnErrorUnmasked before after thing =
+  mask $ \restore -> do
+    a <- restore before
+    restore (thing a) `onException` after a
