@@ -54,7 +54,7 @@ module Control.Etage.Incubator (
   -- > grow options = do
   -- >   ...
   -- >   nerve <- growNerve
-  -- >   bracketOnErrorUnmasked (attach defaultOptions nerve) detachAndWait $ \neuron -> do
+  -- >   bracketOnError (attach defaultOptions nerve) detachAndWait $ \neuron -> do
   -- >     ...
   -- >     return $ YourNeuron ... neuron nerve
   -- >
@@ -62,7 +62,7 @@ module Control.Etage.Incubator (
   -- >   detachAndWait neuron
   -- >   ...
   --
-  -- We use 'bracketOnErrorUnmasked' there to be sure that 'Neuron' is properly 'dissolve'd even if there is an exception later on in
+  -- We use 'bracketOnError' there to be sure that 'Neuron' is properly 'dissolve'd even if there is an exception later on in
   -- 'grow'ing the parent 'Neuron'. And we use 'detachAndWait' so that we give time for child 'Neuron' to 'dissolve' properly.
   -- Which 'Neuron' you want is in this case inferred from the type of the 'Nerve' you defined.
   growNerve,
@@ -117,7 +117,7 @@ interpret neurons chans attached = viewT >=> eval neurons chans attached
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
             nerve <- liftIO growNerve
             let c = getFromChan nerve
-            bracketOnErrorUnmasked (attach optionsSetter nerve) detachAndWait $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
+            bracketOnError (attach optionsSetter nerve) detachAndWait $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
           eval ns cs ats (AttachOperation from for :>>= is) = do
             let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
             (from', ats') <- if c `notElem` ats

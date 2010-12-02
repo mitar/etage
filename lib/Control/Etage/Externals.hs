@@ -56,8 +56,7 @@ module Control.Etage.Externals (
   prepareEnvironment,
   getCurrentImpulseTime,
   impulseEq,
-  impulseCompare,
-  bracketOnErrorUnmasked
+  impulseCompare
 ) where
 
 import Prelude hiding (catch)
@@ -68,6 +67,7 @@ import Data.Function
 import Data.List
 import Control.Exception
 import Data.Time.Clock.POSIX
+import GHC.IO (unsafeUnmask)
 import GHC.Conc (forkOnIO, numCapabilities)
 import System.IO
 import System.Posix.Signals
@@ -295,13 +295,14 @@ exception. In the later case it rethrows an exception in the parent 'Neuron' (or
 has 'dissolve'd for 'detachAndWait' and 'detachManyAndWait'.
 -}
 attach' :: Neuron n => (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO LiveNeuron
-attach' optionsSetter nerve = mask $ \restore -> do
+attach' optionsSetter nerve = mask_ $ do
   currentThread <- myThreadId
   dissolved <- newEmptySampleVar
   defOptions <- mkDefaultOptions
   let options = optionsSetter defOptions
   nid <- divideNeuron options $
-           bracket (grow options) dissolve (restore . live nerve) `catches` [
+           -- TODO: Remove unsafeUnmask in favor of forkIOWithUnmask when it will be available
+           bracket (grow options) dissolve (unsafeUnmask . live nerve) `catches` [
                Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
                Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
              ] `finally` uninterruptible (writeSampleVar dissolved ())
@@ -429,12 +430,3 @@ Useful for 'Neuron's which operate on all types of 'Impulse's and want 'Ord' def
 -}
 impulseCompare :: (Impulse i, Impulse j) => i -> j -> Ordering
 impulseCompare a b = (impulseTime a, impulseValue a) `compare` (impulseTime b, impulseValue b)
-
-{-|
-Similar to 'bracketOnError' only that the first computation does not have asynchronous exceptions masked.
--}
-bracketOnErrorUnmasked :: IO a -> (a -> IO b) -> (a -> IO c) -> IO c
-bracketOnErrorUnmasked before after thing =
-  mask $ \restore -> do
-    a <- restore before
-    restore (thing a) `onException` after a
