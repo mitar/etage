@@ -16,9 +16,10 @@ module Control.Etage.Fail (
   FailOptions,
   NeuronFromImpulse,
   NeuronForImpulse,
-  NeuronOptions
+  NeuronOptions(..)
 ) where
 
+import Control.Concurrent
 import Data.Typeable
 
 import Control.Etage
@@ -32,7 +33,10 @@ instance Show FailNeuron where
 type FailFromImpulse = NeuronFromImpulse FailNeuron
 -- | 'Impulse's for 'FailNeuron'. This 'Neuron' does not define any 'Impulse's it would receive.
 type FailForImpulse = NeuronForImpulse FailNeuron
--- | Options for 'FailNeuron'. This 'Neuron' does not define any options.
+{-| Options for 'FailNeuron'. This option is defined:
+
+[@delay :: 'Int'@] The delay in microseconds before 'Neuron' fails. Default is no delay.
+-}
 type FailOptions = NeuronOptions FailNeuron
 
 -- | Impulse instance for 'FailNeuron'.
@@ -52,6 +56,14 @@ deriving instance Show FailForImpulse
 instance Neuron FailNeuron where
   data NeuronFromImpulse FailNeuron
   data NeuronForImpulse FailNeuron
-  data NeuronOptions FailNeuron
+  data NeuronOptions FailNeuron = FailOptions {
+      delay :: Int
+    } deriving (Eq, Ord, Read, Show)
   
-  grow _ = dissolving (undefined :: FailNeuron)
+  mkDefaultOptions = return FailOptions {
+      delay = 0
+    }
+  
+  grow FailOptions { delay } = do
+    threadDelay delay
+    dissolving (undefined :: FailNeuron)
