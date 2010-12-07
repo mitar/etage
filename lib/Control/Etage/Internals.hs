@@ -10,6 +10,9 @@ module Control.Etage.Internals (
   ImpulseTime,
   AxonConductive,
   AxonNonConductive,
+  FromNerve(..),
+  ForNerve(..),
+  BothNerve(..),
   NeuronDissolved,
   NeuronId,
   waitForException
@@ -94,6 +97,24 @@ deriving instance Typeable4 Nerve
 
 instance (Typeable forConductivity, Typeable fromConductivity, Typeable from, Typeable for) => Show (Nerve from fromConductivity for forConductivity) where
   show = show . typeOf
+
+{-|
+An existentially quantified types encompassing all 'Nerve's which are conductive from a 'Neuron'.
+-}
+data FromNerve where
+  FromNerve :: Impulse from => Nerve from AxonConductive for forConductivity -> FromNerve
+
+{-|
+An existentially quantified types encompassing all 'Nerve's which are conductive to a 'Neuron'.
+-}
+data ForNerve where
+  ForNerve :: Impulse for => Nerve from fromConductivity for AxonConductive -> ForNerve
+
+{-|
+An existentially quantified types encompassing all 'Nerve's which are conductive in both directions.
+-}
+data BothNerve where
+  BothNerve :: (Impulse from, Impulse for) => Nerve from AxonConductive for AxonConductive -> BothNerve
 
 type NeuronDissolved = SampleVar ()
 type NeuronId = ThreadId

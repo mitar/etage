@@ -30,6 +30,9 @@ module Control.Etage.Externals (
   Nerve,
   AxonConductive,
   AxonNonConductive,
+  FromNerve(..),
+  ForNerve(..),
+  BothNerve(..),
 
   -- * Sending and receiving outside the 'Neuron'
   -- | Those functions are used outside the 'Neuron' when interacting with it.
@@ -377,6 +380,9 @@ class (Impulse i, Impulse j) => ImpulseTranslator i j where
   -- (Translating multiple 'Impulse's into one 'Impulse' requires keeping a state and should be done in a 'Neuron'.) The order is
   -- important as first 'Impulse's in the list are send first along a 'Nerve'.
   translate :: i -> [j]
+
+instance Impulse i => ImpulseTranslator i i where
+  translate i = [i]
 
 {-|
 Function which can be used as an argument to 'growNeuron' or 'attach' which leaves default options as they are.

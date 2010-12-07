@@ -15,8 +15,8 @@ module Control.Etage.Function (
   FunctionFromImpulse,
   FunctionForImpulse,
   FunctionOptions,
-  NeuronFromImpulse,
-  NeuronForImpulse,
+  NeuronFromImpulse(..),
+  NeuronForImpulse(..),
   NeuronOptions(..)
 ) where
 
