@@ -69,7 +69,8 @@ module Control.Etage.Incubator (
   propagate,
   branchNerveFor,
   branchNerveFrom,
-  branchNerveBoth
+  branchNerveBoth,
+  cross
 ) where
 
 import Control.Applicative
@@ -155,6 +156,7 @@ instance Impulse i => GrowAxon (Axon i AxonConductive) where
 instance GrowAxon (Axon i AxonNonConductive) where
   growAxon = return NoAxon
 
+-- TODO: Make an incubation version of growNerve which would follow if it was correctly attached
 {-|
 Grows an unattached 'Nerve'. By specifying type of the 'Nerve' you can specify conductivity of both directions (which is then
 type checked for consistency around the program) and thus specify which 'Impulse's you are interested in (and thus limit possible
@@ -244,3 +246,24 @@ Branches 'Nerve' on both sides. Same as both 'branchNerveFor' and 'branchNerveFr
 -}
 branchNerveBoth :: Nerve from AxonConductive for AxonConductive -> IO (Nerve from AxonConductive for AxonConductive)
 branchNerveBoth = branchNerveFrom >=> branchNerveFor
+
+{-|
+Crosses axons around in a 'Nerve'. Useful probably only when you want to 'attachTo' 'Nerve' so that it looks as 'Impulse's are comming
+from a 'Neuron' and are not send to a 'Neuron'. So in this case you are 'attach'ing 'Nerve' in a direction away from a 'Neuron' and not
+towards it, what is a default.
+
+For example, you can do something like this:
+
+> nerveDump <- growNeuron defaultOptions :: NerveOnlyFor DumpNeuron
+> nerveOnes <- growNeuron (\o -> o { valueSource = repeat 1 }) :: NerveOnlyFrom (SequenceNeuron Int)
+> nerveTwos <- growNeuron (\o -> o { valueSource = repeat 2 }) :: NerveOnlyFrom (SequenceNeuron Int)
+> 
+> nerveOnes `attachTo` [Translatable (cross nerveTwos)]
+> nerveTwos `attachTo` [Translatable nerveDump]
+
+Of course in this example you could simply attach both 'Nerve's to "Control.Etage.Dump" 'Neuron'. So 'cross' is probably useful only when using
+'Nerve's unattached to its 'Neuron' and/or when using such 'Nerve's with 'Neuron's which take 'Nerve's as options (like
+"Control.Etage.Zip").
+-}
+cross :: Nerve from fromConductivity for forConductivity -> Nerve for forConductivity from fromConductivity
+cross (Nerve from for) = Nerve for from
