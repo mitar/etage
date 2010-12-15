@@ -212,7 +212,7 @@ use 'mkNeuronMapOnRandomCapability' to create such 'NeuronMapCapability' value.
 data NeuronMapCapability =
     NeuronMapOnCapability Int -- ^ Map a 'Neuron' to fixed capability.
   | NeuronFreelyMapOnCapability -- ^ Let Haskell decide on which capability is best to map a 'Neuron' at a given time.
-  deriving (Eq, Ord, Read, Show)
+  deriving (Eq, Ord, Read, Show, Typeable, Data)
 
 {-|
 Creates a 'NeuronMapOnCapability' value with a chosen capability picked by random. Useful when you have to map few 'Neuron's to the
@@ -315,7 +315,7 @@ attach' optionsSetter nerve = mask_ $ do
 An exception which initiates 'dissolve'-ing of a 'Neuron'. Should be thrown inside the 'Neuron' with passing its 'Neuron' value as
 argument (as passed to 'live' method). For throwing outside the 'Neuron' use 'DissolveException' (or simply 'detach' and others).
 -}
-data DissolvingException = DissolvingException String deriving (Show, Typeable)
+data DissolvingException = DissolvingException String deriving (Show, Typeable, Data)
 
 instance Exception DissolvingException
 
@@ -331,7 +331,7 @@ dissolving n = throwIO $ DissolvingException (show n)
 An exception which initiates 'dissolve'-ing of a 'Neuron'. Should be thrown outside the 'Neuron' to the 'Neuron'. For
 throwing inside the 'Neuron' use 'DissolvingException' (or simply 'dissolving').
 -}
-data DissolveException = DissolveException deriving (Show, Typeable)
+data DissolveException = DissolveException deriving (Show, Typeable, Data)
 
 instance Exception DissolveException
 

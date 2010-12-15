@@ -20,11 +20,13 @@ module Control.Etage.Fail (
 ) where
 
 import Control.Concurrent
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
 data FailNeuron deriving (Typeable)
+
+deriving instance Data FailNeuron
 
 instance Show FailNeuron where
   show = show . typeOf
@@ -52,13 +54,16 @@ instance Impulse FailForImpulse where
 deriving instance Show FailFromImpulse
 deriving instance Show FailForImpulse
 
+deriving instance Data FailFromImpulse
+deriving instance Data FailForImpulse
+
 -- | A simple 'Neuron' which just fails in 'grow'ing phase.
 instance Neuron FailNeuron where
   data NeuronFromImpulse FailNeuron
   data NeuronForImpulse FailNeuron
   data NeuronOptions FailNeuron = FailOptions {
       delay :: Int
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = return FailOptions {
       delay = 0

@@ -27,7 +27,7 @@ module Control.Etage.Sequence (
 
 import Control.Concurrent
 import Control.Monad
-import Data.Typeable
+import Data.Data
 import System.Random
 
 import Control.Etage
@@ -35,7 +35,7 @@ import Control.Etage
 defaultMaxInterval :: Int
 defaultMaxInterval = 1000000 -- microseconds, 1 second
 
-data (Real r, Random r, Show r, Typeable r) => SequenceNeuron r = SequenceNeuron (SequenceOptions r) deriving (Typeable)
+data SequenceNeuron r = SequenceNeuron (SequenceOptions r) deriving (Typeable, Data)
 
 instance Typeable r => Show (SequenceNeuron r) where
   show = show . typeOf
@@ -73,17 +73,19 @@ instance (Real r, Random r, Show r, Typeable r) => Impulse (SequenceForImpulse r
 
 deriving instance Show (SequenceForImpulse r)
 
+deriving instance Data r => Data (SequenceForImpulse r)
+
 -- | A 'Neuron' which generates values based on a given sequence at a given interval.
 instance (Real r, Random r, Show r, Typeable r) => Neuron (SequenceNeuron r) where
   data NeuronFromImpulse (SequenceNeuron r) = Value {
       impulseTimestamp :: ImpulseTime, -- time is first so that ordering is first by time
       value :: r
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   data NeuronForImpulse (SequenceNeuron r)
   data NeuronOptions (SequenceNeuron r) = SequenceOptions {
       valueSource :: [r],
       intervalSource :: [Int] -- microseconds
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = do
     generator <- newStdGen

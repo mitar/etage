@@ -19,7 +19,7 @@ module Control.Etage.Dump (
 ) where
 
 import Control.Monad
-import Data.Typeable
+import Data.Data
 import System.IO
 
 import Control.Etage
@@ -51,6 +51,8 @@ instance Impulse DumpForImpulse where
   impulseValue (DumpForImpulse i) = impulseValue i
 
 deriving instance Show DumpFromImpulse
+
+deriving instance Data DumpFromImpulse
 
 instance Show DumpForImpulse where
   show (DumpForImpulse i) = show i

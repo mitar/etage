@@ -19,8 +19,8 @@ module Control.Etage.Internals (
 ) where
 
 import Control.Concurrent hiding (Chan)
+import Data.Data
 import Data.Time.Clock.POSIX
-import Data.Typeable
 import Numeric
 import Text.ParserCombinators.ReadP
 
@@ -70,6 +70,9 @@ This is type checked and enforced. If you define axon as conductive you have to 
 really read somewhere, otherwise a memory leak will occur.
 -}
 data AxonConductive deriving (Typeable)
+
+deriving instance Data AxonConductive
+
 {-|
 Is axon (one direction of a 'Nerve') conductive? No, it is not.
 
@@ -77,6 +80,8 @@ This is type checked and enforced. It is useful to specify nonconductive axons w
 particular axon (direction), making sure there will not be a memory leak because 'Impulse's would pile up.
 -}
 data AxonNonConductive deriving (Typeable)
+
+deriving instance Data AxonNonConductive
 
 data Axon impulse conductivity where
   Axon :: Impulse i => Chan i -> Axon i AxonConductive

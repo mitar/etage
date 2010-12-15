@@ -21,14 +21,14 @@ module Control.Etage.Timeout (
 
 import Control.Concurrent
 import Control.Monad
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
 defaultTimeout :: Int
 defaultTimeout = 60000000 -- microseconds, 60 seconds
 
-data TimeoutNeuron = TimeoutNeuron TimeoutOptions deriving (Typeable)
+data TimeoutNeuron = TimeoutNeuron TimeoutOptions deriving (Typeable, Data)
 
 instance Show TimeoutNeuron where
   show = show . typeOf
@@ -57,13 +57,16 @@ instance Impulse TimeoutForImpulse where
 deriving instance Show TimeoutFromImpulse
 deriving instance Show TimeoutForImpulse
 
+deriving instance Data TimeoutFromImpulse
+deriving instance Data TimeoutForImpulse
+
 -- | A simple 'Neuron' which initiates 'dissolving' after a given delay.
 instance Neuron TimeoutNeuron where
   data NeuronFromImpulse TimeoutNeuron
   data NeuronForImpulse TimeoutNeuron
   data NeuronOptions TimeoutNeuron = TimeoutOptions {
       timeout :: Int -- microseconds
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = return TimeoutOptions {
       timeout = defaultTimeout

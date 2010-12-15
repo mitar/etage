@@ -22,7 +22,7 @@ module Control.Etage.Function (
 
 import Control.Applicative
 import Control.Monad
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
@@ -74,7 +74,7 @@ instance Neuron FunctionNeuron where
   data NeuronFromImpulse FunctionNeuron = Value {
       impulseTimestamp :: ImpulseTime, -- time is first so that ordering is first by time
       value :: Rational
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   data NeuronForImpulse FunctionNeuron where
     FunctionForImpulse :: Impulse i => i -> FunctionForImpulse
   data NeuronOptions FunctionNeuron = FunctionOptions {

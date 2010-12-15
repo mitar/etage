@@ -21,7 +21,7 @@ module Control.Etage.Worker (
 
 import Control.Applicative
 import Control.Monad
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
@@ -34,6 +34,8 @@ instance Show WorkType where
 -- TODO: We could maybe send results back?
 
 data WorkerNeuron deriving (Typeable)
+
+deriving instance Data WorkerNeuron
 
 -- | 'Impulse's from 'WorkerNeuron'. This 'Neuron' does not define any 'Impulse's it would send.
 type WorkerFromImpulse = NeuronFromImpulse WorkerNeuron
@@ -66,6 +68,8 @@ instance Impulse WorkerForImpulse where
 
 deriving instance Show WorkerFromImpulse
 
+deriving instance Data WorkerFromImpulse
+
 -- | A worker 'Neuron' which evaluates 'IO' actions it receives.
 instance Neuron WorkerNeuron where
   data NeuronFromImpulse WorkerNeuron
@@ -75,7 +79,7 @@ instance Neuron WorkerNeuron where
     } deriving (Show)
   data NeuronOptions WorkerNeuron = WorkerOptions {
       mapOnCapability :: NeuronMapCapability
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = return WorkerOptions {
       mapOnCapability = NeuronFreelyMapOnCapability
