@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, OverlappingInstances, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
 
 module Control.Etage.Externals (
   -- * 'Neuron's and 'Impulse's
@@ -265,6 +265,9 @@ instance Ord AnyImpulse where
 
 instance Impulse i => ImpulseTranslator i AnyImpulse where
   translate i = [AnyImpulse i]
+
+instance ImpulseTranslator AnyImpulse AnyImpulse where
+  translate i = [i]
 
 {-|
 Empty 'Impulse' data type. Useful when 'Neuron' does not send or receive 'Impulse's.
