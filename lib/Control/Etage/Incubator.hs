@@ -12,8 +12,8 @@ module Control.Etage.Incubator (
   -- >   prepareEnvironment
   -- >   
   -- >   incubate $ do
-  -- >     nerveRandom <- growNeuron defaultOptions :: NerveOnlyFrom (SequenceNeuron Int)
-  -- >     nerveDump <- growNeuron defaultOptions :: NerveOnlyFor DumpNeuron
+  -- >     nerveRandom <- (growNeuron :: NerveOnlyFrom (SequenceNeuron Int)) defaultOptions
+  -- >     nerveDump <- (growNeuron :: NerveOnlyFor DumpNeuron) defaultOptions
   -- >     
   -- >     nerveRandom `attachTo` [Translatable nerveDump]
   incubate,
@@ -113,7 +113,7 @@ incubate (Incubation program) = mask $ \restore -> do
 interpret :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
 interpret neurons chans attached = viewT >=> eval neurons chans attached
     where eval :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
-          eval ns cs ats (Return _) = return (ns, cs, ats)
+          eval ns cs ats (Return ()) = return (ns, cs, ats)
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
             nerve <- liftIO growNerve
             let c = getFromChan nerve
@@ -180,25 +180,25 @@ growNerve = do
   return $ Nerve from for
 
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is conductive in both directions.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is conductive in both directions.
 -}
-type NerveBoth n = Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonConductive)
+type NerveBoth n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonConductive)
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is not conductive in any directions.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is not conductive in any directions.
 -}
-type NerveNone n = Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonNonConductive)
+type NerveNone n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonNonConductive)
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is conductive only in the direction from the 'Neuron'.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is conductive only in the direction from the 'Neuron'.
 -}
-type NerveOnlyFrom n = Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonNonConductive)
+type NerveOnlyFrom n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonNonConductive)
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is conductive only in the direction to the 'Neuron'.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is conductive only in the direction to the 'Neuron'.
 -}
-type NerveOnlyFor n = Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonConductive)
+type NerveOnlyFor n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonConductive)
 
 class (Typeable a, Eq a) => ChanClass a where
   neuronTypeOf :: a -> TypeRep

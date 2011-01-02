@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, GADTs, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, GADTs, ScopedTypeVariables, TypeSynonymInstances, DeriveDataTypeable, NamedFieldPuns #-}
 
 module Control.Etage.Propagate (
   propagate,
@@ -15,33 +15,14 @@ import Control.Etage.Externals
 
 data (Typeable from, Typeable for, Typeable forConductivity) => PropagateNeuron from for forConductivity = PropagateNeuron (PropagateOptions from for forConductivity) deriving (Typeable)
 
-type PropagateFromImpulse from for forConductivity = NeuronFromImpulse (PropagateNeuron from for forConductivity)
-type PropagateForImpulse from for forConductivity = NeuronForImpulse (PropagateNeuron from for forConductivity)
 type PropagateOptions from for forConductivity = NeuronOptions (PropagateNeuron from for forConductivity)
-
-{-|
-Impulse instance for internal 'Neuron' which implements 'propagate'.
--}
-instance (Typeable from, Typeable for, Typeable forConductivity) => Impulse (PropagateFromImpulse from for forConductivity) where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-{-|
-Impulse instance for internal 'Neuron' which implements 'propagate'.
--}
-instance (Typeable from, Typeable for, Typeable forConductivity) => Impulse (PropagateForImpulse from for forConductivity) where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-deriving instance Show (PropagateFromImpulse from for forConductivity)
-deriving instance Show (PropagateForImpulse from for forConductivity)
 
 {-|
 An internal 'Neuron' which implements 'propagate'.
 -}
 instance (Typeable from, Typeable for, Typeable forConductivity) => Neuron (PropagateNeuron from for forConductivity) where
-  data NeuronFromImpulse (PropagateNeuron from for forConductivity)
-  data NeuronForImpulse (PropagateNeuron from for forConductivity)
+  type NeuronFromImpulse (PropagateNeuron from for forConductivity) = NoImpulse
+  type NeuronForImpulse (PropagateNeuron from for forConductivity) = NoImpulse
   data NeuronOptions (PropagateNeuron from for forConductivity) = PropagateOptions {
       from :: Nerve from AxonConductive for forConductivity,
       for ::[Translatable from]
@@ -72,7 +53,7 @@ propagate from for = do
   return ()
 
 {-|
-An existentially quantified types encompassing all 'Nerve's which can be 'translate'd from the same 'Impulse' type. Used in 'attachTo'
+An existentially quantified type encompassing all 'Nerve's which can be 'translate'd from the same 'Impulse' type. Used in 'attachTo'
 (and 'propagate') to list all 'Nerve's to which you want a given 'Nerve' to 'attach' to (and 'Impulse's to 'propagate').
 -}
 data Translatable i where

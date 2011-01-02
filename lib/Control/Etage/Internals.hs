@@ -104,19 +104,19 @@ instance (Typeable forConductivity, Typeable fromConductivity, Typeable from, Ty
   show = show . typeOf
 
 {-|
-An existentially quantified types encompassing all 'Nerve's which are conductive from a 'Neuron'.
+An existentially quantified type encompassing all 'Nerve's which are conductive from a 'Neuron'.
 -}
 data FromNerve where
   FromNerve :: Impulse from => Nerve from AxonConductive for forConductivity -> FromNerve
 
 {-|
-An existentially quantified types encompassing all 'Nerve's which are conductive to a 'Neuron'.
+An existentially quantified type encompassing all 'Nerve's which are conductive to a 'Neuron'.
 -}
 data ForNerve where
   ForNerve :: Impulse for => Nerve from fromConductivity for AxonConductive -> ForNerve
 
 {-|
-An existentially quantified types encompassing all 'Nerve's which are conductive in both directions.
+An existentially quantified type encompassing all 'Nerve's which are conductive in both directions.
 -}
 data BothNerve where
   BothNerve :: (Impulse from, Impulse for) => Nerve from AxonConductive for AxonConductive -> BothNerve
