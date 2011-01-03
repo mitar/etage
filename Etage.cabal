@@ -20,7 +20,7 @@ License:             LGPL-3
 License-file:        LICENSE
 Author:              Mitar Milutinovic
 Maintainer:          mitar.haskell@tnode.com
-Copyright:           (c) 2010 Mitar Milutinovic
+Copyright:           (c) 2010-2011 Mitar Milutinovic
 Category:            Control, AI
 Build-type:          Simple
 Cabal-version:       >= 1.8
