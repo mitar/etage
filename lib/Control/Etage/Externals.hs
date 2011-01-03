@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, OverlappingInstances, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
 
 module Control.Etage.Externals (
   -- * 'Neuron's and 'Impulse's
@@ -23,8 +23,13 @@ module Control.Etage.Externals (
   Impulse(..),
   ImpulseTime,
   ImpulseValue,
-  ImpulseTranslator(..),
+  AnyImpulse(..),
+  NoImpulse,
+  IValue(..),
+  IInteger,
+  IRational,
 
+  ImpulseTranslator(..),
   translateAndSend,
 
   Nerve,
@@ -33,6 +38,8 @@ module Control.Etage.Externals (
   FromNerve(..),
   ForNerve(..),
   BothNerve(..),
+  TranslatableFrom(..),
+  TranslatableFor(..),
 
   -- * Sending and receiving outside the 'Neuron'
   -- | Those functions are used outside the 'Neuron' when interacting with it.
@@ -57,6 +64,7 @@ module Control.Etage.Externals (
 
   -- * Helper functions
   prepareEnvironment,
+  impulseFuser,
   getCurrentImpulseTime,
   impulseEq,
   impulseCompare
@@ -212,7 +220,7 @@ use 'mkNeuronMapOnRandomCapability' to create such 'NeuronMapCapability' value.
 data NeuronMapCapability =
     NeuronMapOnCapability Int -- ^ Map a 'Neuron' to fixed capability.
   | NeuronFreelyMapOnCapability -- ^ Let Haskell decide on which capability is best to map a 'Neuron' at a given time.
-  deriving (Eq, Ord, Read, Show)
+  deriving (Eq, Ord, Read, Show, Typeable, Data)
 
 {-|
 Creates a 'NeuronMapOnCapability' value with a chosen capability picked by random. Useful when you have to map few 'Neuron's to the
@@ -233,16 +241,79 @@ divideNeuron options a = fork a
                  NeuronFreelyMapOnCapability -> forkIO
                  NeuronMapOnCapability c     -> forkOnIO c
 
-deriving instance Typeable1 NeuronFromImpulse
-deriving instance Typeable1 NeuronForImpulse
-deriving instance Typeable1 NeuronOptions
+-- TODO: Use "deriving instance Typeable1 NeuronOptions" once support for that is in stable GHC version
+instance Typeable1 NeuronOptions where
+  typeOf1 _ = mkTyConApp (mkTyCon "Control.Etage.Externals.NeuronOptions") []
+
+{-|
+An existentially quantified type encompassing all 'Impulse's. Useful when 'Neuron' should send or receive any 'Impulse' type.
+-}
+data AnyImpulse where
+  AnyImpulse :: Impulse i => i -> AnyImpulse
+
+instance Impulse AnyImpulse where
+  impulseTime (AnyImpulse i) = impulseTime i
+  impulseValue (AnyImpulse i) = impulseValue i
+
+deriving instance Typeable AnyImpulse
+
+instance Show AnyImpulse where
+  show (AnyImpulse i) = show i
+
+instance Eq AnyImpulse where
+  (==) = impulseEq
+
+instance Ord AnyImpulse where
+  compare = impulseCompare
+
+instance Impulse i => ImpulseTranslator i AnyImpulse where
+  translate i = [AnyImpulse i]
+
+instance ImpulseTranslator AnyImpulse AnyImpulse where
+  translate i = [i]
+
+{-|
+Empty 'Impulse' data type. Useful when 'Neuron' does not send or receive 'Impulse's.
+-}
+data NoImpulse
+
+instance Impulse NoImpulse where
+  impulseTime _ = undefined
+  impulseValue _ = undefined
+
+deriving instance Typeable NoImpulse
+deriving instance Show NoImpulse
+deriving instance Data NoImpulse
+
+{-|
+Basic 'Impulse' data type holding a 'value'.
+
+Ordered first by 'impulseTimestamp' and then by 'value'. Equal only if both 'impulseTimestamp' and 'value' are equal.
+-}
+data (Real r, Show r, Typeable r) => IValue r = IValue {
+    -- time is first so that ordering is first by time
+    impulseTimestamp :: ImpulseTime, -- ^ Time when the 'Impulse' was created/finalized.
+    value :: r -- ^ 'value' of the 'Impulse'.
+  } deriving (Eq, Ord, Read, Show, Typeable, Data)
+
+instance (Real r, Show r, Typeable r) => Impulse (IValue r) where
+  impulseTime IValue { impulseTimestamp } = impulseTimestamp
+  impulseValue IValue { value } = [toRational value]
+
+-- | 'IValue' type with 'value' as 'Integer' type.
+type IInteger = IValue Integer
+-- | 'IValue' type with 'value' as 'Rational' type.
+type IRational = IValue Rational
+
+-- TODO: Should be call of dissolving automatic at the end of the live?
+-- TODO: Use NoImpulse as default for NeuronFromImpulse and NeuronForImpulse once support for defaults are implemented in GHC
 
 -- | A type class which defines common methods and data types of 'Neuron's.
-class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n)) => Neuron n where
-  -- | A data type for 'Impulses' send from a 'Neuron'. 'Neuron' does not really need to use them.
-  data NeuronFromImpulse n
-  -- | A data type for 'Impulses' send for a 'Neuron'. 'Neuron' does not really need to use them.
-  data NeuronForImpulse n
+class (Typeable n, Impulse (NeuronFromImpulse n), Impulse (NeuronForImpulse n), Typeable (NeuronFromImpulse n), Typeable (NeuronForImpulse n)) => Neuron n where
+  -- | A type for 'Impulses' send from a 'Neuron'. If not used, define it simply as 'NoImpulse'.
+  type NeuronFromImpulse n
+  -- | A type for 'Impulses' send for a 'Neuron'. If not used, define it simply as 'NoImpulse'.
+  type NeuronForImpulse n
   -- | A data type for options. 'Neuron' does not really need to use them.
   data NeuronOptions n
   
@@ -315,7 +386,7 @@ attach' optionsSetter nerve = mask_ $ do
 An exception which initiates 'dissolve'-ing of a 'Neuron'. Should be thrown inside the 'Neuron' with passing its 'Neuron' value as
 argument (as passed to 'live' method). For throwing outside the 'Neuron' use 'DissolveException' (or simply 'detach' and others).
 -}
-data DissolvingException = DissolvingException String deriving (Show, Typeable)
+data DissolvingException = DissolvingException String deriving (Show, Typeable, Data)
 
 instance Exception DissolvingException
 
@@ -331,7 +402,7 @@ dissolving n = throwIO $ DissolvingException (show n)
 An exception which initiates 'dissolve'-ing of a 'Neuron'. Should be thrown outside the 'Neuron' to the 'Neuron'. For
 throwing inside the 'Neuron' use 'DissolvingException' (or simply 'dissolving').
 -}
-data DissolveException = DissolveException deriving (Show, Typeable)
+data DissolveException = DissolveException deriving (Show, Typeable, Data)
 
 instance Exception DissolveException
 
@@ -385,6 +456,21 @@ instance Impulse i => ImpulseTranslator i i where
   translate i = [i]
 
 {-|
+An existentially quantified type encompassing all 'Nerve's which can be 'translate'd to the same 'Impulse' type. Used in
+'fuseWith' (and 'fuse') to list all 'Nerve's from which you want to 'fuse' 'Impulse's.
+-}
+data TranslatableFrom i where
+  TranslatableFrom :: (Impulse for, ImpulseTranslator from i) => Nerve from AxonConductive for forConductivity -> TranslatableFrom i
+
+{-|
+An existentially quantified type encompassing all 'Nerve's which can be 'translate'd from the same 'Impulse' type. Used in
+'attachTo' (and 'propagate') to list all 'Nerve's to which you want a given 'Nerve' to 'attach' to (and 'Impulse's to
+'propagate').
+-}
+data TranslatableFor i where
+  TranslatableFor :: (Impulse from, ImpulseTranslator i for) => Nerve from fromConductivity for AxonConductive -> TranslatableFor i
+
+{-|
 Function which can be used as an argument to 'growNeuron' or 'attach' which leaves default options as they are.
 
 In fact it is just an 'id'entity function.
@@ -410,6 +496,16 @@ prepareEnvironment = do
   return ()
 
 {-|
+Helper function for use with 'fuseWith' (and 'fuse') which wraps given function with 'impulseValue' before it and 'IValue' after.
+
+For example, you can define a fusing function which makes a 'product' of fusing 'Impulse's (more precisely their data payload):
+
+> impulseFuser ((: []) . product . concat)
+-}
+impulseFuser :: (Real r, Show r, Typeable r) => ([ImpulseValue] -> [r]) -> ImpulseTime -> [AnyImpulse] -> [IValue r]
+impulseFuser f t = map (IValue t) . f . map impulseValue
+
+{-|
 Translates (if necessary 'ImpulseTranslator' exists) an 'Impulse' and sends translation to 'Neuron'.
 -}
 translateAndSend :: ImpulseTranslator i for => Nerve from fromConductivity for AxonConductive -> i -> IO ()
@@ -422,17 +518,13 @@ getCurrentImpulseTime :: IO ImpulseTime
 getCurrentImpulseTime = getPOSIXTime
 
 {-|
-This function defines equality between 'Impulse's as equality of 'impulseTime' and 'impulseValue' values. Useful for 'Neuron's which
-operate on all types of 'Impulse's and want 'Eq' defined on their 'Impulse's. Examples of such 'Neuron's are "Control.Etage.Dump"
-and "Control.Etage.Function".
+This function defines equality between 'Impulse's as equality of 'impulseTime' and 'impulseValue' values.
 -}
 impulseEq :: (Impulse i, Impulse j) => i -> j -> Bool
 impulseEq a b = impulseTime a == impulseTime b && impulseValue a == impulseValue b
 
 {-|
 This function defines ordering between 'Impulse's as ordering first by 'impulseTime' values and then by 'impulseValue' values.
-Useful for 'Neuron's which operate on all types of 'Impulse's and want 'Ord' defined on their 'Impulse's. Examples of such
-'Neuron's are "Control.Etage.Dump" and "Control.Etage.Function".
 -}
 impulseCompare :: (Impulse i, Impulse j) => i -> j -> Ordering
 impulseCompare a b = (impulseTime a, impulseValue a) `compare` (impulseTime b, impulseValue b)

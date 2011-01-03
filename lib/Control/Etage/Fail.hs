@@ -4,7 +4,7 @@
 This module defines a simple 'Neuron' which just fails (throws a 'DissolvingException') in 'grow'ing phase. It can be used to test
 error recovery and cleanup in 'grow'ing phase or early stages of 'live'ing phase in other 'Neuron's by using something like:
 
-> _ <- growNeuron defaultOptions :: NerveNone FailNeuron
+> _ <- (growNeuron :: NerveNone FailNeuron) (\o -> o { delay = 10000000 })
 
 somewhere among (or after) 'growNeuron' calls for other 'Neuron's in 'Incubation'.
 -}
@@ -14,24 +14,27 @@ module Control.Etage.Fail (
   FailFromImpulse,
   FailForImpulse,
   FailOptions,
-  NeuronFromImpulse,
-  NeuronForImpulse,
   NeuronOptions(..)
 ) where
 
 import Control.Concurrent
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
+defaultDelay :: Int
+defaultDelay = 0 -- microseconds
+
 data FailNeuron deriving (Typeable)
+
+deriving instance Data FailNeuron
 
 instance Show FailNeuron where
   show = show . typeOf
 
--- | 'Impulse's from 'FailNeuron'. This 'Neuron' does not define any 'Impulse's it would send.
+-- | 'Impulse's from 'FailNeuron'. This 'Neuron' does not define any 'Impulse's it would send, 'NoImpulse'.
 type FailFromImpulse = NeuronFromImpulse FailNeuron
--- | 'Impulse's for 'FailNeuron'. This 'Neuron' does not define any 'Impulse's it would receive.
+-- | 'Impulse's for 'FailNeuron'. This 'Neuron' does not define any 'Impulse's it would receive, 'NoImpulse'.
 type FailForImpulse = NeuronForImpulse FailNeuron
 {-| Options for 'FailNeuron'. This option is defined:
 
@@ -39,29 +42,16 @@ type FailForImpulse = NeuronForImpulse FailNeuron
 -}
 type FailOptions = NeuronOptions FailNeuron
 
--- | Impulse instance for 'FailNeuron'.
-instance Impulse FailFromImpulse where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
--- | Impulse instance for 'FailNeuron'.
-instance Impulse FailForImpulse where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-deriving instance Show FailFromImpulse
-deriving instance Show FailForImpulse
-
 -- | A simple 'Neuron' which just fails in 'grow'ing phase.
 instance Neuron FailNeuron where
-  data NeuronFromImpulse FailNeuron
-  data NeuronForImpulse FailNeuron
+  type NeuronFromImpulse FailNeuron = NoImpulse
+  type NeuronForImpulse FailNeuron = NoImpulse
   data NeuronOptions FailNeuron = FailOptions {
       delay :: Int
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = return FailOptions {
-      delay = 0
+      delay = defaultDelay
     }
   
   grow FailOptions { delay } = do

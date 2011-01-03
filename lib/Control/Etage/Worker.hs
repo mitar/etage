@@ -1,27 +1,27 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns, DisambiguateRecordFields #-}
 
 {-|
 This module defines a worker 'Neuron' which evaluates 'IO' actions it receives. It is useful to offload lengthly 'IO' actions
 into another thread. In the case of too many queued 'IO' actions they are silently dropped and only newest ones are evaluated.
 You 'grow' it in 'Incubation' by using something like:
 
-> nerveWorker <- growNeuron defaultOptions :: NerveOnlyFor WorkerNeuron
+> nerveWorker <- (growNeuron :: NerveOnlyFor WorkerNeuron) defaultOptions
+
+It is an example of a 'Neuron' which defines 'getNeuronMapCapability'.
 -}
 
 module Control.Etage.Worker (
   WorkerNeuron,
   WorkerFromImpulse,
-  WorkerForImpulse,
+  WorkerForImpulse(..),
   WorkerOptions,
-  NeuronFromImpulse,
-  NeuronForImpulse(..),
   NeuronOptions(..),
   WorkType
 ) where
 
 import Control.Applicative
 import Control.Monad
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
@@ -35,15 +35,15 @@ instance Show WorkType where
 
 data WorkerNeuron deriving (Typeable)
 
--- | 'Impulse's from 'WorkerNeuron'. This 'Neuron' does not define any 'Impulse's it would send.
-type WorkerFromImpulse = NeuronFromImpulse WorkerNeuron
-{-|
-'Impulse's for 'WorkerNeuron'. This 'Impulse' constructor is defined:
+deriving instance Data WorkerNeuron
 
-[@Work { impulseTimestamp :: ImpulseTime, work :: WorkType }@]
-@impulseTimestamp@ is time when the action was enqueued for evaluation in the 'WorkerNeuron', @work@ is enqueued action.
--}
-type WorkerForImpulse = NeuronForImpulse WorkerNeuron
+-- | 'Impulse's from 'WorkerNeuron'. This 'Neuron' does not define any 'Impulse's it would send, 'NoImpulse'.
+type WorkerFromImpulse = NeuronFromImpulse WorkerNeuron
+-- | 'Impulse's for 'WorkerNeuron'.
+data WorkerForImpulse = Work {
+    impulseTimestamp :: ImpulseTime, -- ^ Time when the action was enqueued for evaluation in the 'WorkerNeuron'.
+    work :: WorkType -- ^ Enqueued action.
+  } deriving (Show, Typeable)
 {-|
 Options for 'WorkerNeuron'. This option is defined:
 
@@ -54,28 +54,17 @@ is 'NeuronFreelyMapOnCapability'.
 -}
 type WorkerOptions = NeuronOptions WorkerNeuron
 
--- | Impulse instance for 'WorkerNeuron'.
-instance Impulse WorkerFromImpulse where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
--- | Impulse instance for 'WorkerNeuron'.
 instance Impulse WorkerForImpulse where
   impulseTime Work { impulseTimestamp } = impulseTimestamp
   impulseValue _ = []
 
-deriving instance Show WorkerFromImpulse
-
 -- | A worker 'Neuron' which evaluates 'IO' actions it receives.
 instance Neuron WorkerNeuron where
-  data NeuronFromImpulse WorkerNeuron
-  data NeuronForImpulse WorkerNeuron = Work {
-      impulseTimestamp :: ImpulseTime,
-      work :: WorkType
-    } deriving (Show)
+  type NeuronFromImpulse WorkerNeuron = NoImpulse
+  type NeuronForImpulse WorkerNeuron = WorkerForImpulse
   data NeuronOptions WorkerNeuron = WorkerOptions {
       mapOnCapability :: NeuronMapCapability
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = return WorkerOptions {
       mapOnCapability = NeuronFreelyMapOnCapability

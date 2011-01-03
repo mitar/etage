@@ -12,36 +12,41 @@ module Control.Etage.Incubator (
   -- >   prepareEnvironment
   -- >   
   -- >   incubate $ do
-  -- >     nerveRandom <- growNeuron defaultOptions :: NerveOnlyFrom (SequenceNeuron Int)
-  -- >     nerveDump <- growNeuron defaultOptions :: NerveOnlyFor DumpNeuron
+  -- >     nerveRandom <- (growNeuron :: NerveOnlyFrom (SequenceNeuron Int)) defaultOptions
+  -- >     nerveDump <- (growNeuron :: NerveOnlyFor DumpNeuron) defaultOptions
   -- >     
-  -- >     nerveRandom `attachTo` [Translatable nerveDump]
+  -- >     nerveRandom `attachTo` [TranslatableFor nerveDump]
   incubate,
   growNeuron,
   attachTo,
+  fuseWith,
   NerveBoth,
   NerveNone,
   NerveOnlyFrom,
   NerveOnlyFor,
   Incubation,
-  Translatable(..),
   -- * Internals
   -- | Be careful when using those functions as you have to assure your network is well-behaved:
   --
   -- * You should assure that for all 'Nerve's you defined as conductive from 'Neuron's and 'attach'ed them to 'Neuron's you
-  -- really receive sent impulses, otherwise there will be a memory leak. You should probably just define those nerves
-  -- as 'NerveOnlyFor' or 'NerveNone'.
+  -- really receive sent impulses, otherwise there will be a memory leak. You should probably just define those 'Nerve's you
+  -- are not interested in 'Impulse's from as 'NerveOnlyFor' or 'NerveNone'.
   --
   -- * If you 'attach' multiple 'Neuron's to the same 'Nerve' you should probably take care of branching 'Nerve's correctly. For
   -- example, if multiple 'Neuron's are receiving from the same 'Nerve' you should first branch 'Nerve' with 'branchNerveFor',
   -- otherwise 'Neuron's will not receive all 'Impulse's as some other 'Neuron' will receive it first (but this can be also
   -- intentional).
   -- On the other hand, if you are receiving from the same 'Neuron' at multiple parts of the network you should branch
-  -- 'Nerve' with 'branchNerveFrom' for each such part (or not, if intentional). This also holds for 'propagate': if you are using
+  -- 'Nerve' with 'branchNerveFrom' for each such part (or not, if intentional).
+  --
+  -- * This also holds for 'propagate': if you are using
   -- it multiple times with the same 'Nerve' as @from@ argument you should first branch it with 'branchNerveFrom'. (But it is
   -- probably easier to just use it once and list all @for@ 'Nerve's together.)
   --
-  -- * And of course in a case of an exception or in general when your are doing cleanup you should assure that 'detach'
+  -- * And for 'fuse': all 'Nerve's you are 'fuse'-ing from should probably be first branched with 'branchNerveFrom' if you are
+  -- also receiving from them somewhere else.
+  --
+  -- * Of course in a case of an exception or in general when your are doing cleanup you should assure that 'detach'
   -- (or 'detachAndWait') is called for each 'LiveNeuron' (or 'detachMany' or 'detachManyAndWait').
   --
   -- They are exposed so that you can decouple 'grow'ing and 'dissolve'-ing handling and that you can attach 'Nerve's
@@ -67,6 +72,7 @@ module Control.Etage.Incubator (
   -- Which 'Neuron' you want is in this case inferred from the type of the 'Nerve' you defined.
   growNerve,
   propagate,
+  fuse,
   branchNerveFor,
   branchNerveFrom,
   branchNerveBoth,
@@ -84,12 +90,14 @@ import System.IO
 
 import Control.Etage.Chan
 import Control.Etage.Propagate
+import Control.Etage.Fuse
 import Control.Etage.Internals
 import Control.Etage.Externals
 
 data IncubationOperation a where
   NeuronOperation :: (Neuron n, GrowAxon (Axon (NeuronFromImpulse n) fromConductivity), GrowAxon (Axon (NeuronForImpulse n) forConductivity)) => (NeuronOptions n -> NeuronOptions n) -> IncubationOperation (Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity)
-  AttachOperation :: forall from for forConductivity. (Typeable from, Typeable for, Typeable forConductivity) => Nerve from AxonConductive for forConductivity -> [Translatable from] -> IncubationOperation ()
+  AttachOperation :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> [TranslatableFor from] -> IncubationOperation ()
+  FuseOperation :: forall i j. (Impulse i, Impulse j) => [TranslatableFrom i] -> (ImpulseTime -> [i] -> [j]) -> IncubationOperation (Nerve (FuseFromImpulse i j) AxonConductive (FuseForImpulse i j) AxonNonConductive)
 
 type Incubation' a = ProgramT IncubationOperation IO a
 {-|
@@ -107,27 +115,43 @@ incubate (Incubation program) = mask $ \restore -> do
   (neurons, chans, attached) <- restore $ interpret [] [] [] program
   flip finally (detachManyAndWait neurons) $ do
     let na = nub chans \\ nub attached
-        typ = unlines . map (\(ChanBox c) -> ' ' : show (neuronTypeOf c)) $ na
-    unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created nerves were attached. This causes a memory leak as send impulses are not received. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves for neurons:\n" ++ typ
+        typ = unlines . map (\(ChanBox c) -> ' ' : show (impulseTypeOf c)) $ na
+    unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created (conductive) nerves were attached. This causes a memory leak as send impulses are not received. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves have following impulse types in direction from a neuron:\n" ++ typ
     restore waitForException
 
 interpret :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
 interpret neurons chans attached = viewT >=> eval neurons chans attached
     where eval :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
-          eval ns cs ats (Return _) = return (ns, cs, ats)
+          eval ns cs ats (Return ()) = return (ns, cs, ats)
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
             nerve <- liftIO growNerve
             let c = getFromChan nerve
             bracketOnError (attach optionsSetter nerve) detachAndWait $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
           eval ns cs ats (AttachOperation from for :>>= is) = do
-            let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
-            (from', ats') <- if c `notElem` ats
-                               then return (from, c:ats)
-                               else do
-                                 branchFrom <- branchNerveFrom from -- we have to branch from chan as it is attached multiple times
-                                 return (branchFrom, ats) -- we store only original nerves in attached list
+            (from', ats') <- maybeBranch from ats
             propagate from' for
             interpret ns cs ats' . is $ ()
+          eval ns cs ats (FuseOperation nerves fuser :>>= is) = do
+            (nerves', ats') <- maybeBranchMany nerves ats
+            n <- fuse nerves' fuser
+            let c = getFromChan n
+            interpret ns (c ++ cs) ats' . is $ n
+
+maybeBranch :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> [ChanBox] -> IO (Nerve from AxonConductive for forConductivity, [ChanBox])
+maybeBranch from ats = do
+  let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
+  if c `notElem` ats
+    then return (from, c:ats)
+    else do
+      branchFrom <- branchNerveFrom from -- we have to branch from chan as it is attached multiple times
+      return (branchFrom, ats) -- we store only original nerves in attached list
+
+maybeBranchMany :: forall i. (Impulse i) => [TranslatableFrom i] -> [ChanBox] -> IO ([TranslatableFrom i], [ChanBox])
+maybeBranchMany [] ats = return ([], ats)
+maybeBranchMany (TranslatableFrom n:ns) ats = do
+  (n', ats') <- maybeBranch n ats
+  (ns', ats'') <- maybeBranchMany ns ats'
+  return (TranslatableFrom n':ns', ats'')
 
 {-|
 Grows a 'Neuron', taking a function which changes default options and returning a 'Nerve' 'attach'ed to the 'Neuron'.
@@ -140,73 +164,67 @@ growNeuron os = Incubation $ singleton (NeuronOperation os)
 {-|
 Attaches a 'Nerve' to other 'Nerve's so that 'Impulse's send from the 'Neuron' over the first 'Nerve' are received by 'Neuron's
 of other 'Nerve's. 'Impulse's are 'propagate'd only in this direction, not in the other. If you want also the other direction use
-'attachTo' again for that direction.
+'attachTo' again for that direction. 'attachTo' takes care of all the details (like branching 'Nerve's as necessary).
 
 Internally it uses 'propagate'.
 -}
-attachTo :: forall from for forConductivity. (Typeable from, Typeable for, Typeable forConductivity) => Nerve from AxonConductive for forConductivity -> [Translatable from] -> Incubation ()
+attachTo :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> [TranslatableFor from] -> Incubation ()
+attachTo _ [] = return ()
 attachTo n ts = Incubation $ singleton (AttachOperation n ts)
 
-class GrowAxon a where
-  growAxon :: IO a
-
-instance Impulse i => GrowAxon (Axon i AxonConductive) where
-  growAxon = Axon <$> newChan
-
-instance GrowAxon (Axon i AxonNonConductive) where
-  growAxon = return NoAxon
-
--- TODO: Make an incubation version of growNerve which would follow if it was correctly attached
 {-|
-Grows an unattached 'Nerve'. By specifying type of the 'Nerve' you can specify conductivity of both directions (which is then
-type checked for consistency around the program) and thus specify which 'Impulse's you are interested in (and thus limit possible
-memory leak). With type of 'Impulse's this 'Nerve' is capable of conducting you can also specify which 'Neuron' you are interested
-in 'grow'ing on the one end of the 'Nerve'.
+Fuses 'Impulse's received from given 'Nerve's using the given function, sending them over the resulting 'grow'n 'Nerve'. 
+'fuseWith' takes care of all the details (like branching 'Nerve's as necessary).
 
-For example, you could grow a 'Nerve' for "Control.Etage.Sequence" 'Neuron' and 'Neuron' itself like this:
+The important aspect of 'fuse'-ing is its synchronization behavior, as it requires exactly one 'Impulse' from each given 'Nerve' at
+a time to 'fuse' them together. So it is important that all given 'Nerve's have more or less the equal density of 'Impulse's, otherwise
+queues of some 'Nerve's will grow unproportionally because of the stalled 'Impulse's, causing at least a memory leak.
 
-> nerve <- growNerve :: IO (Nerve (SequenceFromImpulse Int) AxonConductive (SequenceForImpulse Int) AxonNonConductive)
-> neuron <- attach defaultOptions nerve
+'impulseFuser' helper function can maybe help you with defining fusing function. 'fuseWith' uses type of the given function to construct
+type of the resulting 'Nerve' so probably too polymorphic type will give you problems.
 
-and for example print all 'Impulse's as they are coming in:
+For example, 'fuse'-ing by 'sum'ing two 'Impulse's together can be achived like this:
 
-> print =<< getContentsFromNeuron nerve
+> incubate $ do
+>   nerveRandom1 <- (growNeuron :: NerveOnlyFrom (SequenceNeuron Int)) defaultOptions
+>   nerveRandom2 <- (growNeuron :: NerveOnlyFrom (SequenceNeuron Int)) defaultOptions
+>   nerveDump <- (growNeuron :: NerveOnlyFor DumpNeuron) defaultOptions
+>   
+>   nerveFused <- [TranslatableFrom nerveRandom1, TranslatableFrom nerveRandom2] `fuseWith` (impulseFuser ((: []) . sum . concat))
+>   
+>   nerveFused `attachTo` [TranslatableFor nerveDump]
 
-Check 'growNeuron' for a more high-level function (of 'Incubation') which both 'grow's a 'Neuron' and corresponding 'Nerve' taking
-care of all the details. Use this function only if you need decoupled 'grow'ing.
+Internally it uses 'fuse'.
 -}
-growNerve :: (Impulse from, Impulse for, GrowAxon (Axon from fromConductivity), GrowAxon (Axon for forConductivity)) => IO (Nerve from fromConductivity for forConductivity)
-growNerve = do
-  from <- growAxon
-  for <- growAxon
-  return $ Nerve from for
+fuseWith :: forall i j. (Impulse i, Impulse j) => [TranslatableFrom i] -> (ImpulseTime -> [i] -> [j]) -> Incubation (Nerve (FuseFromImpulse i j) AxonConductive (FuseForImpulse i j) AxonNonConductive)
+fuseWith ts f = Incubation $ singleton (FuseOperation ts f)
 
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is conductive in both directions.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is conductive in both directions.
 -}
-type NerveBoth n = Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonConductive)
+type NerveBoth n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonConductive)
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is not conductive in any directions.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is not conductive in any directions.
 -}
-type NerveNone n = Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonNonConductive)
+type NerveNone n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonNonConductive)
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is conductive only in the direction from the 'Neuron'.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is conductive only in the direction from the 'Neuron'.
 -}
-type NerveOnlyFrom n = Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonNonConductive)
+type NerveOnlyFrom n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonConductive (NeuronForImpulse n) AxonNonConductive)
 {-|
-Type which helps you define a type of the result of 'growNeuron'. It takes type of the 'Neuron' you want to 'grow' as an argument
-and specifies a 'Nerve' which is conductive only in the direction to the 'Neuron'.
+Type which helps you define (fix) a type of the 'growNeuron' function so that compiler knows whith 'Neuron' instance to choose.
+It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 'Nerve' which is conductive only in the direction to the 'Neuron'.
 -}
-type NerveOnlyFor n = Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonConductive)
+type NerveOnlyFor n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonConductive)
 
 class (Typeable a, Eq a) => ChanClass a where
-  neuronTypeOf :: a -> TypeRep
+  impulseTypeOf :: a -> TypeRep
 
 instance Impulse i => ChanClass (Chan i) where
-  neuronTypeOf = head . typeRepArgs . head . typeRepArgs . typeOf -- we assume here that impulses are just NeuronFromImpulse or NeuronForImpulse
+  impulseTypeOf = head . typeRepArgs . typeOf -- we remove Chan and leave just type of elements
 
 data ChanBox where
   ChanBox :: ChanClass a => a -> ChanBox
@@ -246,24 +264,3 @@ Branches 'Nerve' on both sides. Same as both 'branchNerveFor' and 'branchNerveFr
 -}
 branchNerveBoth :: Nerve from AxonConductive for AxonConductive -> IO (Nerve from AxonConductive for AxonConductive)
 branchNerveBoth = branchNerveFrom >=> branchNerveFor
-
-{-|
-Crosses axons around in a 'Nerve'. Useful probably only when you want to 'attachTo' 'Nerve' so that it looks as 'Impulse's are comming
-from a 'Neuron' and are not send to a 'Neuron'. So in this case you are 'attach'ing 'Nerve' in a direction away from a 'Neuron' and not
-towards it, what is a default.
-
-For example, you can do something like this:
-
-> nerveDump <- growNeuron defaultOptions :: NerveOnlyFor DumpNeuron
-> nerveOnes <- growNeuron (\o -> o { valueSource = repeat 1 }) :: NerveOnlyFrom (SequenceNeuron Int)
-> nerveTwos <- growNeuron (\o -> o { valueSource = repeat 2 }) :: NerveOnlyFrom (SequenceNeuron Int)
-> 
-> nerveOnes `attachTo` [Translatable (cross nerveTwos)]
-> nerveTwos `attachTo` [Translatable nerveDump]
-
-Of course in this example you could simply attach both 'Nerve's to "Control.Etage.Dump" 'Neuron'. So 'cross' is probably useful only when using
-'Nerve's unattached to its 'Neuron' and/or when using such 'Nerve's with 'Neuron's which take 'Nerve's as options (like
-"Control.Etage.Zip").
--}
-cross :: Nerve from fromConductivity for forConductivity -> Nerve for forConductivity from fromConductivity
-cross (Nerve from for) = Nerve for from

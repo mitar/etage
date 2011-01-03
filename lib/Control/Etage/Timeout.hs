@@ -1,12 +1,15 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, StandaloneDeriving, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, ScopedTypeVariables, DeriveDataTypeable, TypeSynonymInstances, NamedFieldPuns #-}
 
 {-|
 This module defines a simple 'Neuron' which initiates 'dissolving' after a given delay. It can be used to limit execution time of
 the network. You 'grow' it in 'Incubation' by using something like:
 
-> _ <- growNeuron defaultOptions :: NerveNone TimeoutNeuron
+> _ <- (growNeuron :: NerveNone TimeoutNeuron) (\o -> o { timeout = 10000000 })
 
 somewhere among (best at the end) 'growNeuron' calls for other 'Neuron's in 'Incubation'.
+
+It is an example of a 'Neuron' which does not 'live' indefinitely (until an exception) but 'dissolve's after some time (by using
+'dissolving').
 -}
 
 module Control.Etage.Timeout (
@@ -14,28 +17,25 @@ module Control.Etage.Timeout (
   TimeoutFromImpulse,
   TimeoutForImpulse,
   TimeoutOptions,
-  NeuronFromImpulse,
-  NeuronForImpulse,
   NeuronOptions(..)
 ) where
 
 import Control.Concurrent
-import Control.Monad
-import Data.Typeable
+import Data.Data
 
 import Control.Etage
 
 defaultTimeout :: Int
 defaultTimeout = 60000000 -- microseconds, 60 seconds
 
-data TimeoutNeuron = TimeoutNeuron TimeoutOptions deriving (Typeable)
+data TimeoutNeuron = TimeoutNeuron TimeoutOptions deriving (Typeable, Data)
 
 instance Show TimeoutNeuron where
   show = show . typeOf
 
--- | 'Impulse's from 'TimeoutNeuron'. This 'Neuron' does not define any 'Impulse's it would send.
+-- | 'Impulse's from 'TimeoutNeuron'. This 'Neuron' does not define any 'Impulse's it would send, 'NoImpulse'.
 type TimeoutFromImpulse = NeuronFromImpulse TimeoutNeuron
--- | 'Impulse's for 'TimeoutNeuron'. This 'Neuron' does not define any 'Impulse's it would receive.
+-- | 'Impulse's for 'TimeoutNeuron'. This 'Neuron' does not define any 'Impulse's it would receive, 'NoImpulse'.
 type TimeoutForImpulse = NeuronForImpulse TimeoutNeuron
 {-|
 Options for 'TimeoutNeuron'. This option is defined:
@@ -44,26 +44,13 @@ Options for 'TimeoutNeuron'. This option is defined:
 -}
 type TimeoutOptions = NeuronOptions TimeoutNeuron
 
--- | Impulse instance for 'TimeoutNeuron'.
-instance Impulse TimeoutFromImpulse where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
--- | Impulse instance for 'TimeoutNeuron'.
-instance Impulse TimeoutForImpulse where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-deriving instance Show TimeoutFromImpulse
-deriving instance Show TimeoutForImpulse
-
 -- | A simple 'Neuron' which initiates 'dissolving' after a given delay.
 instance Neuron TimeoutNeuron where
-  data NeuronFromImpulse TimeoutNeuron
-  data NeuronForImpulse TimeoutNeuron
+  type NeuronFromImpulse TimeoutNeuron = NoImpulse
+  type NeuronForImpulse TimeoutNeuron = NoImpulse
   data NeuronOptions TimeoutNeuron = TimeoutOptions {
       timeout :: Int -- microseconds
-    } deriving (Eq, Ord, Read, Show)
+    } deriving (Eq, Ord, Read, Show, Data)
   
   mkDefaultOptions = return TimeoutOptions {
       timeout = defaultTimeout

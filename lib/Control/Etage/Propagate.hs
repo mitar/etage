@@ -1,8 +1,7 @@
-{-# LANGUAGE TypeFamilies, GADTs, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, GADTs, ScopedTypeVariables, TypeSynonymInstances, DeriveDataTypeable, NamedFieldPuns #-}
 
 module Control.Etage.Propagate (
-  propagate,
-  Translatable(..)
+  propagate
 ) where
 
 import Control.Monad
@@ -13,67 +12,40 @@ import Control.Etage.Externals
 
 -- TODO: Implement delay in propagation (constant delay, random from some distribution)
 
-data (Typeable from, Typeable for, Typeable forConductivity) => PropagateNeuron from for forConductivity = PropagateNeuron (PropagateOptions from for forConductivity) deriving (Typeable)
+data PropagateNeuron from for = PropagateNeuron (PropagateOptions from for) deriving (Typeable)
 
-type PropagateFromImpulse from for forConductivity = NeuronFromImpulse (PropagateNeuron from for forConductivity)
-type PropagateForImpulse from for forConductivity = NeuronForImpulse (PropagateNeuron from for forConductivity)
-type PropagateOptions from for forConductivity = NeuronOptions (PropagateNeuron from for forConductivity)
-
-{-|
-Impulse instance for internal 'Neuron' which implements 'propagate'.
--}
-instance (Typeable from, Typeable for, Typeable forConductivity) => Impulse (PropagateFromImpulse from for forConductivity) where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-{-|
-Impulse instance for internal 'Neuron' which implements 'propagate'.
--}
-instance (Typeable from, Typeable for, Typeable forConductivity) => Impulse (PropagateForImpulse from for forConductivity) where
-  impulseTime _ = undefined
-  impulseValue _ = undefined
-
-deriving instance Show (PropagateFromImpulse from for forConductivity)
-deriving instance Show (PropagateForImpulse from for forConductivity)
+type PropagateOptions from for = NeuronOptions (PropagateNeuron from for)
 
 {-|
 An internal 'Neuron' which implements 'propagate'.
 -}
-instance (Typeable from, Typeable for, Typeable forConductivity) => Neuron (PropagateNeuron from for forConductivity) where
-  data NeuronFromImpulse (PropagateNeuron from for forConductivity)
-  data NeuronForImpulse (PropagateNeuron from for forConductivity)
-  data NeuronOptions (PropagateNeuron from for forConductivity) = PropagateOptions {
-      from :: Nerve from AxonConductive for forConductivity,
-      for ::[Translatable from]
+instance (Impulse from, Impulse for) => Neuron (PropagateNeuron from for) where
+  type NeuronFromImpulse (PropagateNeuron from for) = from
+  type NeuronForImpulse (PropagateNeuron from for) = for
+  data NeuronOptions (PropagateNeuron from for) = PropagateOptions {
+      for ::[TranslatableFor for]
     }
   
   mkDefaultOptions = return PropagateOptions {
-      from = undefined,
       for = undefined
     }
   
   grow options = return $ PropagateNeuron options
   
-  live _ (PropagateNeuron PropagateOptions { from, for }) = forever $ do
-    i <- getFromNeuron from
-    mapM_ (\(Translatable n) -> translateAndSend n i) for
+  live nerve (PropagateNeuron PropagateOptions { for }) = forever $ do
+    i <- getForNeuron nerve
+    mapM_ (\(TranslatableFor n) -> translateAndSend n i) for
 
 {-|
-It 'grow's an internal 'Neuron' which propagates 'Impulse's from a given 'Nerve' to other 'Nerve's, 'translate'-ing as necessary.
+It 'grow's an internal 'Neuron' which 'propagate's 'Impulse's from a given 'Nerve' to other 'Nerve's, 'translate'-ing as necessary.
 
 Check 'attachTo' for a more high-level function (of 'Incubation') taking care of all the details (like branching 'Nerve's as necessary).
 Use this function only if you are dealing with 'grow'ing and 'attach'ing of 'Nerve's directly.
 -}
-propagate :: forall from for forConductivity. (Typeable from, Typeable for, Typeable forConductivity) => Nerve from AxonConductive for forConductivity -> [Translatable from] -> IO ()
+propagate :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> [TranslatableFor from] -> IO ()
+propagate _ [] = return ()
 propagate from for = do
   -- we do not manage this neuron, it will be cleaned by RTS at program exit
   -- TODO: What if this is not the only thing the program is doing? Should we cleanup this threads at the end of Incubation, too?
-  _ <- attach (\o -> o { from, for } :: NeuronOptions (PropagateNeuron from for forConductivity)) undefined
+  _ <- attach (\o -> o { for } :: NeuronOptions (PropagateNeuron for from)) (cross from) -- we use cross here so that in neuron we can behave as in normal neuron (use getForNeuron for example)
   return ()
-
-{-|
-An existentially quantified types encompassing all 'Nerve's which can be 'translate'd from the same 'Impulse' type. Used in 'attachTo'
-(and 'propagate') to list all 'Nerve's to which you want a given 'Nerve' to 'attach' to (and 'Impulse's to 'propagate').
--}
-data Translatable i where
-  Translatable :: ImpulseTranslator i for => Nerve from fromConductivity for AxonConductive -> Translatable i
