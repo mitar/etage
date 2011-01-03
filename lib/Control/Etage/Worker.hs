@@ -7,7 +7,8 @@ You 'grow' it in 'Incubation' by using something like:
 
 > nerveWorker <- (growNeuron :: NerveOnlyFor WorkerNeuron) defaultOptions
 
-It is an example of a 'Neuron' which defines 'getNeuronMapCapability'.
+It is an example of a 'Neuron' which defines 'getNeuronMapCapability'. It processes only the newest 'Impulse's it receives, when
+they get queued, so 'Impulse's are dropped if load is too high.
 -}
 
 module Control.Etage.Worker (

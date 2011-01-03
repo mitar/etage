@@ -5,7 +5,7 @@ This module defines a 'Neuron' which dumps all 'Impulse's it receives. You 'grow
 
 > nerveDump <- (growNeuron :: NerveOnlyFor DumpNeuron) (\o -> o { showInsteadOfDump = True })
 
-It is an example of a 'Neuron' which can recieve any 'Impulse' type.
+It is an example of a 'Neuron' which can recieve any 'Impulse' type. It processes all 'Impulse's it receives.
 -}
 
 module Control.Etage.Dump (

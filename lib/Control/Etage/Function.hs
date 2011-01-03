@@ -10,7 +10,23 @@ needed (probably in some other 'Neuron'). You 'grow' it in 'Incubation' by using
 This example can receive any 'Impulse' type ('AnyImpulse') and returns 'sum' of its data payload (as given by 'impulseValue')
 as 'IRational' type.
 
-It is an example of a 'Neuron' with both receiving and sending 'Impulse's types parametrized.
+The following example calculates the greatest common divisor ('gcd'):
+
+> incubate $ do
+>   let gcd t IList { list = (a:b:is) } = let r = a `mod` b in if r == 0 then [IList t (b:is)] else [IList t (b:r:is)]
+>       gcd _ _ = []
+>   
+>   nerveDump <- (growNeuron :: NerveOnlyFor DumpNeuron) (\o -> o { showInsteadOfDump = True })
+>   nerveSum <- (growNeuron :: NerveBoth (FunctionNeuron IIntegerList IIntegerList)) (\o -> o { function = gcd })
+>   
+>   nerveSum `attachTo` [TranslatableFor nerveSum, TranslatableFor nerveDump]
+>   
+>   liftIO $ do
+>     t <- getCurrentImpulseTime
+>     sendForNeuron nerveSum $ IList t [110, 80, 5]
+
+This 'Neuron' is an example of a 'Neuron' with both receiving and sending 'Impulse's types parametrized. It processes only the newest 'Impulse's it receives, when
+they get queued, so 'Impulse's are dropped if load is too high.
 -}
 
 module Control.Etage.Function (

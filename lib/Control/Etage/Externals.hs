@@ -28,6 +28,9 @@ module Control.Etage.Externals (
   IValue(..),
   IInteger,
   IRational,
+  IList(..),
+  IIntegerList,
+  IRationalList,
 
   ImpulseTranslator(..),
   translateAndSend,
@@ -64,7 +67,8 @@ module Control.Etage.Externals (
 
   -- * Helper functions
   prepareEnvironment,
-  impulseFuser,
+  fuserFun,
+  listFuser,
   getCurrentImpulseTime,
   impulseEq,
   impulseCompare
@@ -288,22 +292,42 @@ deriving instance Data NoImpulse
 {-|
 Basic 'Impulse' data type holding a 'value'.
 
-Ordered first by 'impulseTimestamp' and then by 'value'. Equal only if both 'impulseTimestamp' and 'value' are equal.
+Ordered first by 'impulseValueTimestamp' and then by 'value'. Equal only if both 'impulseValueTimestamp' and 'value' are equal.
 -}
 data (Real r, Show r, Typeable r) => IValue r = IValue {
     -- time is first so that ordering is first by time
-    impulseTimestamp :: ImpulseTime, -- ^ Time when the 'Impulse' was created/finalized.
+    impulseValueTimestamp :: ImpulseTime, -- ^ Time when the 'Impulse' was created/finalized.
     value :: r -- ^ 'value' of the 'Impulse'.
   } deriving (Eq, Ord, Read, Show, Typeable, Data)
 
 instance (Real r, Show r, Typeable r) => Impulse (IValue r) where
-  impulseTime IValue { impulseTimestamp } = impulseTimestamp
+  impulseTime IValue { impulseValueTimestamp } = impulseValueTimestamp
   impulseValue IValue { value } = [toRational value]
 
 -- | 'IValue' type with 'value' as 'Integer' type.
 type IInteger = IValue Integer
 -- | 'IValue' type with 'value' as 'Rational' type.
 type IRational = IValue Rational
+
+{-|
+Basic 'Impulse' data type holding a 'list' of values.
+
+Ordered first by 'impulseListTimestamp' and then by 'list'. Equal only if both 'impulseListTimestamp' and 'list' are equal.
+-}
+data (Real r, Show r, Typeable r) => IList r = IList {
+    -- time is first so that ordering is first by time
+    impulseListTimestamp :: ImpulseTime, -- ^ Time when the 'Impulse' was created/finalized.
+    list :: [r] -- ^ 'list' of values of the 'Impulse'.
+  } deriving (Eq, Ord, Read, Show, Typeable, Data)
+
+instance (Real r, Show r, Typeable r) => Impulse (IList r) where
+  impulseTime IList { impulseListTimestamp } = impulseListTimestamp
+  impulseValue IList { list } = map toRational list
+
+-- | 'IList' type with 'list' having 'Integer' type values.
+type IIntegerList = IList Integer
+-- | 'IList' type with 'list' having 'Rational' type values.
+type IRationalList = IList Rational
 
 -- TODO: Should be call of dissolving automatic at the end of the live?
 -- TODO: Use NoImpulse as default for NeuronFromImpulse and NeuronForImpulse once support for defaults are implemented in GHC
@@ -502,8 +526,16 @@ For example, you can define a fusing function which makes a 'product' of fusing 
 
 > impulseFuser ((: []) . product . concat)
 -}
-impulseFuser :: (Real r, Show r, Typeable r) => ([ImpulseValue] -> [r]) -> ImpulseTime -> [AnyImpulse] -> [IValue r]
-impulseFuser f t = map (IValue t) . f . map impulseValue
+fuserFun :: (Real r, Show r, Typeable r) => ([ImpulseValue] -> [r]) -> ImpulseTime -> [AnyImpulse] -> [IValue r]
+fuserFun f t = map (IValue t) . f . map impulseValue
+
+{-|
+Helper function for use with 'fuseWith' (and 'fuse') which converts a list of 'IValue' 'Impulse's to a 'IList' 'Impulse'. If given list is empty no
+resulting 'Impulse' is made.
+-}
+listFuser :: (Real r, Show r, Typeable r) => ImpulseTime -> [IValue r] -> [IList r]
+listFuser _ [] = []
+listFuser t vs = [IList t . map value $ vs]
 
 {-|
 Translates (if necessary 'ImpulseTranslator' exists) an 'Impulse' and sends translation to 'Neuron'.

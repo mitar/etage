@@ -9,7 +9,7 @@ the network. You 'grow' it in 'Incubation' by using something like:
 somewhere among (best at the end) 'growNeuron' calls for other 'Neuron's in 'Incubation'.
 
 It is an example of a 'Neuron' which does not 'live' indefinitely (until an exception) but 'dissolve's after some time (by using
-'dissolving').
+'dissolving'). It does not process any 'Impulse's.
 -}
 
 module Control.Etage.Timeout (

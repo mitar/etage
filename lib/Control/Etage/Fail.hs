@@ -7,6 +7,8 @@ error recovery and cleanup in 'grow'ing phase or early stages of 'live'ing phase
 > _ <- (growNeuron :: NerveNone FailNeuron) (\o -> o { delay = 10000000 })
 
 somewhere among (or after) 'growNeuron' calls for other 'Neuron's in 'Incubation'.
+
+This 'Neuron' does not process any 'Impulse's.
 -}
 
 module Control.Etage.Fail (

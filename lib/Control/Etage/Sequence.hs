@@ -12,8 +12,8 @@ or for an infinite source of ones with same random interval:
 
 > nerveOnes <- (growNeuron :: NerveOnlyFrom (SequenceNeuron Int)) (\o -> o { valueSource = repeat 1 })
 
-It is an example of a 'Neuron' with a parametrized type. Check also "Control.Etage.Function" for a 'Neuron' with both receiving
-and sending 'Impulse's types parametrized.
+This 'Neuron' is an example of a 'Neuron' with a parametrized type. Check also "Control.Etage.Function" for a 'Neuron' with both receiving
+and sending 'Impulse's types parametrized. It does not process any (receiving) 'Impulse's.
 -}
 
 module Control.Etage.Sequence (
