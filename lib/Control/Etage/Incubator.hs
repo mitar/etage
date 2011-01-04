@@ -166,6 +166,9 @@ Attaches a 'Nerve' to other 'Nerve's so that 'Impulse's send from the 'Neuron' o
 of other 'Nerve's. 'Impulse's are 'propagate'd only in this direction, not in the other. If you want also the other direction use
 'attachTo' again for that direction. 'attachTo' takes care of all the details (like branching 'Nerve's as necessary).
 
+Be careful if you are attaching the same 'Nerve' multiple times as some 'Impulse's might already been 'propagate'd and thus are not
+available anymore to later attached 'Nerve's. Just list all destination 'Nerve's the first time.
+
 Internally it uses 'propagate'.
 -}
 attachTo :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> [TranslatableFor from] -> Incubation ()

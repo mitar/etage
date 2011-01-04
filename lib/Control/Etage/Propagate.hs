@@ -39,6 +39,9 @@ instance (Impulse from, Impulse for) => Neuron (PropagateNeuron from for) where
 {-|
 It 'grow's an internal 'Neuron' which 'propagate's 'Impulse's from a given 'Nerve' to other 'Nerve's, 'translate'-ing as necessary.
 
+Be careful if you are 'propagate'-ing the same 'Nerve' multiple times as some 'Impulse's might already been 'propagate'd and thus are not
+available anymore to later 'propagate'd 'Nerve's. Just list all destination 'Nerve's the first time.
+
 Check 'attachTo' for a more high-level function (of 'Incubation') taking care of all the details (like branching 'Nerve's as necessary).
 Use this function only if you are dealing with 'grow'ing and 'attach'ing of 'Nerve's directly.
 -}
