@@ -1,5 +1,5 @@
 Name:                Etage
-Version:             0.1.6
+Version:             0.1.7
 Synopsis:            A general data-flow framework
 Description:         A general data-flow framework featuring nondeterminism, laziness and neurological pseudo-terminology. It can be
                      used for example for data-flow computations or event propagation networks. It tries hard to aide type checking and to
