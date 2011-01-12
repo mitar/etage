@@ -79,12 +79,15 @@ module Control.Etage.Incubator (
   cross
 ) where
 
-import Control.Applicative
+import Prelude hiding (null)
+
+import Control.Applicative hiding (empty)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Operational
 import Control.Monad.Trans
-import Data.List
+import Data.Maybe
+import Data.Set hiding (singleton)
 import Data.Typeable
 import System.IO
 
@@ -112,21 +115,24 @@ It rethrows any exception which might have been thrown.
 -}
 incubate :: Incubation () -> IO ()
 incubate (Incubation program) = mask $ \restore -> do
-  (neurons, chans, attached) <- restore $ interpret [] [] [] program
+  (neurons, chans, attached) <- restore $ interpret [] empty empty program
   flip finally (detachManyAndWait neurons) $ do
-    let na = nub chans \\ nub attached
-        typ = unlines . map (\(ChanBox c) -> ' ' : show (impulseTypeOf c)) $ na
+    let na = chans \\ attached
+        typ = unlines . map' (\(ChanBox c) -> ' ' : show (impulseTypeOf c)) $ na
     unless (null na) $ hPutStrLn stderr $ "Warning: It seems not all created (conductive) nerves were attached. This causes a memory leak as send impulses are not received. You should probably just define those nerves as NerveOnlyFor or NerveNone. Dangling nerves have following impulse types in direction from a neuron:\n" ++ typ
     restore waitForException
 
-interpret :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> Incubation' () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
+map' :: (a -> b) -> Set a -> [b]
+map' f = fold ((:) . f) []
+
+interpret :: [LiveNeuron] -> Set ChanBox -> Set ChanBox -> Incubation' () -> IO ([LiveNeuron], Set ChanBox, Set ChanBox)
 interpret neurons chans attached = viewT >=> eval neurons chans attached
-    where eval :: [LiveNeuron] -> [ChanBox] -> [ChanBox] -> ProgramViewT IncubationOperation IO () -> IO ([LiveNeuron], [ChanBox], [ChanBox])
+    where eval :: [LiveNeuron] -> Set ChanBox -> Set ChanBox -> ProgramViewT IncubationOperation IO () -> IO ([LiveNeuron], Set ChanBox, Set ChanBox)
           eval ns cs ats (Return ()) = return (ns, cs, ats)
           eval ns cs ats (NeuronOperation optionsSetter :>>= is) = do
             nerve <- liftIO growNerve
             let c = getFromChan nerve
-            bracketOnError (attach optionsSetter nerve) detachAndWait $ \n -> interpret (n:ns) (c ++ cs) ats . is $ nerve
+            bracketOnError (attach optionsSetter nerve) detachAndWait $ \n -> interpret (n:ns) (maybe cs (`insert` cs) c) ats . is $ nerve
           eval ns cs ats (AttachOperation from for :>>= is) = do
             (from', ats') <- maybeBranch from ats
             propagate from' for
@@ -135,18 +141,18 @@ interpret neurons chans attached = viewT >=> eval neurons chans attached
             (nerves', ats') <- maybeBranchMany nerves ats
             n <- fuse nerves' fuser
             let c = getFromChan n
-            interpret ns (c ++ cs) ats' . is $ n
+            interpret ns (maybe cs (`insert` cs) c) ats' . is $ n
 
-maybeBranch :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> [ChanBox] -> IO (Nerve from AxonConductive for forConductivity, [ChanBox])
+maybeBranch :: forall from for forConductivity. (Impulse from, Impulse for) => Nerve from AxonConductive for forConductivity -> Set ChanBox -> IO (Nerve from AxonConductive for forConductivity, Set ChanBox)
 maybeBranch from ats = do
-  let c = head . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
-  if c `notElem` ats
-    then return (from, c:ats)
+  let c = fromJust . getFromChan $ from -- we know there exists from chan as type checking assures that (from is conductive)
+  if c `notMember` ats
+    then return (from, insert c ats)
     else do
       branchFrom <- branchNerveFrom from -- we have to branch from chan as it is attached multiple times
-      return (branchFrom, ats) -- we store only original nerves in attached list
+      return (branchFrom, ats)
 
-maybeBranchMany :: forall i. (Impulse i) => [TranslatableFrom i] -> [ChanBox] -> IO ([TranslatableFrom i], [ChanBox])
+maybeBranchMany :: forall i. (Impulse i) => [TranslatableFrom i] -> Set ChanBox -> IO ([TranslatableFrom i], Set ChanBox)
 maybeBranchMany [] ats = return ([], ats)
 maybeBranchMany (TranslatableFrom n:ns) ats = do
   (n', ats') <- maybeBranch n ats
@@ -223,7 +229,7 @@ It takes type of the 'Neuron' you want to 'grow' as an argument and specifies a 
 -}
 type NerveOnlyFor n = (NeuronOptions n -> NeuronOptions n) -> Incubation (Nerve (NeuronFromImpulse n) AxonNonConductive (NeuronForImpulse n) AxonConductive)
 
-class (Typeable a, Eq a) => ChanClass a where
+class (Typeable a, Eq a, Ord a) => ChanClass a where
   impulseTypeOf :: a -> TypeRep
 
 instance Impulse i => ChanClass (Chan i) where
@@ -233,11 +239,14 @@ data ChanBox where
   ChanBox :: ChanClass a => a -> ChanBox
 
 instance Eq ChanBox where
-  ChanBox a == ChanBox b = typeOf a == typeOf b && cast a == Just b -- tests both typeOf and cast to be sure (cast could be defined to succeed for different types?)
+  ChanBox a == ChanBox b = typeOf a == typeOf b && cast a == Just b -- tests both typeOf and cast to be sure (eq could be defined to succeed for different types?)
 
-getFromChan :: Nerve from fromConductivity for forConductivity -> [ChanBox]
-getFromChan (Nerve (Axon c) _) = [ChanBox c]
-getFromChan (Nerve NoAxon _) = []
+instance Ord ChanBox where
+  ChanBox a `compare` ChanBox b = cast a `compare` Just b
+
+getFromChan :: Nerve from fromConductivity for forConductivity -> Maybe ChanBox
+getFromChan (Nerve (Axon c) _) = Just (ChanBox c)
+getFromChan (Nerve NoAxon _) = Nothing
 
 {-|
 Branches 'Nerve' on the 'Neuron' side. This allows multiple 'Neuron's to be attached to it and still receive all 'Impulse's

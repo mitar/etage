@@ -37,8 +37,9 @@ module Control.Etage.Chan
 
 import Prelude
 
-import System.IO.Unsafe         ( unsafeInterleaveIO )
+import System.IO.Unsafe
 import Control.Concurrent.MVar
+import Data.IORef
 import Data.Typeable
 
 import Control.Exception.Base
@@ -51,7 +52,18 @@ import Control.Exception.Base
 data Chan a
  = Chan (MVar (Stream a))
         (MVar (Stream a))
- deriving (Eq, Typeable)
+        Int
+ deriving (Typeable)
+
+instance Eq (Chan a) where
+  (Chan _ _ i') == (Chan _ _ i'') = i' == i''
+
+instance Ord (Chan a) where
+  (Chan _ _ i') `compare` (Chan _ _ i'') = i' `compare` i''
+
+globalChanIndex :: IORef Int
+{-# NOINLINE globalChanIndex #-}
+globalChanIndex = unsafePerformIO (newIORef 0)
 
 type Stream a = MVar (ChItem a)
 
@@ -69,7 +81,8 @@ newChan = do
    hole  <- newEmptyMVar
    readVar  <- newMVar hole
    writeVar <- newMVar hole
-   return (Chan readVar writeVar)
+   index <- atomicModifyIORef globalChanIndex (\i -> (i + 1, i))
+   return (Chan readVar writeVar index)
 
 -- To put an element on a channel, a new hole at the write end is created.
 -- What was previously the empty @MVar@ at the back of the channel is then
@@ -78,7 +91,7 @@ newChan = do
 
 -- |Write a value to a 'Chan'.
 writeChan :: Chan a -> a -> IO ()
-writeChan (Chan _ writeVar) val = do
+writeChan (Chan _ writeVar _) val = do
   new_hole <- newEmptyMVar
   modifyMVar_ writeVar $ \old_hole -> do
     putMVar old_hole (ChItem val new_hole)
@@ -86,7 +99,7 @@ writeChan (Chan _ writeVar) val = do
 
 -- |Read the next value from the 'Chan'.
 readChan :: Chan a -> IO a
-readChan (Chan readVar _) = do
+readChan (Chan readVar _ _) = do
   modifyMVar readVar $ \read_end -> do
     (ChItem val new_read_end) <- readMVar read_end
         -- Use readMVar here, not takeMVar,
@@ -126,7 +139,7 @@ tryModifyMVar m io =
 -- |A non-blocking version of 'readChan'. The 'tryReadChan' function returns immediately, with 'Nothing' if the 'Chan' was empty or would
 -- block, or @'Just' a@ with the next value from the 'Chan', otherwise.
 tryReadChan :: Chan a -> IO (Maybe a)
-tryReadChan (Chan readVar _) = do
+tryReadChan (Chan readVar _ _) = do
   tryModifyMVar readVar $ \read_end -> do
     item <- tryReadMVar read_end
         -- Use tryReadMVar here, not tryTakeMVar,
@@ -140,14 +153,14 @@ tryReadChan (Chan readVar _) = do
 -- a kind of broadcast channel, where data written by anyone is seen by
 -- everyone else.
 dupChan :: Chan a -> IO (Chan a)
-dupChan (Chan _ writeVar) = do
+dupChan (Chan _ writeVar index) = do
    hole       <- readMVar writeVar
    newReadVar <- newMVar hole
-   return (Chan newReadVar writeVar)
+   return (Chan newReadVar writeVar index)
 
 -- |Put a data item back onto a channel, where it will be the next item read.
 unGetChan :: Chan a -> a -> IO ()
-unGetChan (Chan readVar _) val = do
+unGetChan (Chan readVar _ _) val = do
    new_read_end <- newEmptyMVar
    modifyMVar_ readVar $ \read_end -> do
      putMVar new_read_end (ChItem val read_end)
@@ -156,7 +169,7 @@ unGetChan (Chan readVar _) val = do
 
 -- |Returns 'True' if the supplied 'Chan' is empty.
 isEmptyChan :: Chan a -> IO Bool
-isEmptyChan (Chan readVar writeVar) = do
+isEmptyChan (Chan readVar writeVar _) = do
    withMVar readVar $ \r -> do
      w <- readMVar writeVar
      let eq = r == w
