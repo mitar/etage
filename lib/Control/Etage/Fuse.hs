@@ -37,6 +37,7 @@ instance (Impulse i, Impulse j) => Neuron (FuseNeuron i j) where
   
   grow options = return $ FuseNeuron options
   
+  -- TODO: Optionally always read only the latest Impulse from each Nerve?
   live nerve (FuseNeuron FuseOptions { fuser, nerves }) = forever $ do
     is <- concat <$> mapM (\(TranslatableFrom n) -> translate <$> getFromNeuron n) nerves
     time <- getCurrentImpulseTime
