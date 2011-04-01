@@ -91,6 +91,8 @@ import System.Random
 import Control.Etage.Chan
 import Control.Etage.Internals
 
+-- TODO: Implement some way to dump network structure into Graphviz format for visualization
+
 {-|
 Sends an 'Impulse' from a 'Neuron'. 'Nerve' does not need to be conductive, 'Impulse' will be silently dropped in this case.
 -}
@@ -402,6 +404,7 @@ attach' optionsSetter nerve = mask_ $ do
            -- TODO: Remove unsafeUnmask in favor of forkIOWithUnmask when it will be available
            bracket (grow options) dissolve (unsafeUnmask . live nerve) `catches` [
                Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
+               Handler (\(e :: BlockedIndefinitelyOnMVar) -> hPutStrLn stderr $ "Warning: " ++ show e ++ ". Have you forgot to initialize with prepareEnvironment?"), -- we ignore BlockedIndefinitelyOnMVar
                Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
              ] `finally` uninterruptible (writeSampleVar dissolved ())
   return $ LiveNeuron dissolved nid
@@ -506,6 +509,8 @@ defaultOptions = id
 Helper function which does some common initialization. Currently it sets 'stderr' buffering to 'LineBuffering' so that when
 multiple 'Neuron's print to 'stderr' output is not mixed. It also installs handlers for 'keyboardSignal' and 'softwareTermination'
 signals so that cleanup in 'Incubation' works as expected.
+
+Using it has also an useful side-effect of Haskell not throwing `BlockedIndefinitelyOnMVar` exceptions when the network runs out.
 -}
 prepareEnvironment :: IO ()
 prepareEnvironment = do
