@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, GADTs, FlexibleInstances, FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls, NamedFieldPuns, CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Control.Etage.Internals (
@@ -129,7 +129,9 @@ data BothNerve where
 type NeuronDissolved = SampleVar ()
 type NeuronId = ThreadId
 
+#if !(MIN_VERSION_base(4,5,0))
 deriving instance Typeable1 SampleVar
+#endif
 
 instance Show NeuronDissolved where
   show = show . typeOf
