@@ -129,7 +129,7 @@ data BothNerve where
 type NeuronDissolved = SampleVar ()
 type NeuronId = ThreadId
 
-#if !(MIN_VERSION_base(4,5,0))
+#if !(MIN_VERSION_base(4,4,0))
 deriving instance Typeable1 SampleVar
 #endif
 
