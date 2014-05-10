@@ -1,5 +1,5 @@
 Name:                Etage
-Version:             0.1.11
+Version:             0.1.12
 Synopsis:            A general data-flow framework
 Description:         A general data-flow framework featuring nondeterminism, laziness and neurological pseudo-terminology. It can be
                      used for example for data-flow computations or event propagation networks. It tries hard to aide type checking and to
@@ -20,7 +20,7 @@ License:             LGPL-3
 License-file:        LICENSE
 Author:              Mitar Milutinovic
 Maintainer:          mitar.haskell@tnode.com
-Copyright:           (c) 2010-2013 Mitar Milutinovic
+Copyright:           (c) 2010-2014 Mitar Milutinovic
 Category:            Control, AI
 Build-type:          Simple
 Cabal-version:       >= 1.8
@@ -43,6 +43,7 @@ Library
                        time >= 1.1 && < 2,
                        operational >= 0.2 && < 1,
                        containers >= 0.4 && < 1,
+                       SafeSemaphore >= 0.10 && < 1,
                        ghc >= 7
   Other-modules:       Control.Etage.Internals,
                        Control.Etage.Externals,

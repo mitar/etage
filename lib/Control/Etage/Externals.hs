@@ -74,16 +74,17 @@ module Control.Etage.Externals (
   impulseCompare
 ) where
 
-import Prelude hiding (catch)
+import Prelude
 
 import Control.Concurrent hiding (Chan, writeChan, readChan, isEmptyChan, getChanContents)
+import Control.Concurrent.MSampleVar
 import Data.Data
 import Data.Function
 import Data.List
 import Control.Exception
 import Data.Time.Clock.POSIX
 import GHC.IO (unsafeUnmask)
-import GHC.Conc (forkOnIO, numCapabilities)
+import GHC.Conc (numCapabilities)
 import System.IO
 import System.Posix.Signals
 import System.Random
@@ -245,11 +246,9 @@ divideNeuron :: Neuron n => NeuronOptions n -> IO () -> IO NeuronId
 divideNeuron options a = fork a
   where fork = case getNeuronMapCapability options of
                  NeuronFreelyMapOnCapability -> forkIO
-                 NeuronMapOnCapability c     -> forkOnIO c
+                 NeuronMapOnCapability c     -> forkOn c
 
--- TODO: Use "deriving instance Typeable1 NeuronOptions" once support for that is in stable GHC version
-instance Typeable1 NeuronOptions where
-  typeOf1 _ = mkTyConApp (mkTyCon "Control.Etage.Externals.NeuronOptions") []
+deriving instance Typeable1 NeuronOptions
 
 {-|
 An existentially quantified type encompassing all 'Impulse's. Useful when 'Neuron' should send or receive any 'Impulse' type.
@@ -397,7 +396,7 @@ has 'dissolve'd for 'detachAndWait' and 'detachManyAndWait'.
 attach' :: Neuron n => (NeuronOptions n -> NeuronOptions n) -> Nerve (NeuronFromImpulse n) fromConductivity (NeuronForImpulse n) forConductivity -> IO LiveNeuron
 attach' optionsSetter nerve = mask_ $ do
   currentThread <- myThreadId
-  dissolved <- newEmptySampleVar
+  dissolved <- newEmptySV
   defOptions <- mkDefaultOptions
   let options = optionsSetter defOptions
   nid <- divideNeuron options $
@@ -406,7 +405,7 @@ attach' optionsSetter nerve = mask_ $ do
                Handler (\(_ :: DissolveException) -> return ()), -- we ignore DissolveException
                Handler (\(e :: BlockedIndefinitelyOnMVar) -> hPutStrLn stderr $ "Warning: " ++ show e ++ ". Have you forgot to initialize with prepareEnvironment?"), -- we ignore BlockedIndefinitelyOnMVar
                Handler (\(e :: SomeException) -> uninterruptible $ throwTo currentThread e)
-             ] `finally` uninterruptible (writeSampleVar dissolved ())
+             ] `finally` uninterruptible (writeSV dissolved ())
   return $ LiveNeuron dissolved nid
 
 {-|
@@ -458,7 +457,7 @@ wait for all 'Neuron's to finish 'dissolve'-ing.
 detachManyAndWait :: [LiveNeuron] -> IO ()
 detachManyAndWait neurons = mask_ $ do
   detachMany neurons
-  mapM_ (\(LiveNeuron d _) -> uninterruptible $ readSampleVar d) neurons
+  mapM_ (\(LiveNeuron d _) -> uninterruptible $ readSV d) neurons
 
 -- Some IO operations are interruptible, better than to make them uninterruptible (which can cause deadlocks) we simply retry interrupted operation
 -- For this to really work all interruptible operations should be wrapped like this (so it is not good idea to use IO operations in such code sections)

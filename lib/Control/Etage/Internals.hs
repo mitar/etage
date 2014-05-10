@@ -23,6 +23,7 @@ module Control.Etage.Internals (
 
 import Control.Applicative
 import Control.Concurrent hiding (Chan, newChan)
+import Control.Concurrent.MSampleVar
 import Data.Data
 import Data.Time.Clock.POSIX
 import Numeric
@@ -126,11 +127,11 @@ An existentially quantified type encompassing all 'Nerve's which are conductive 
 data BothNerve where
   BothNerve :: (Impulse from, Impulse for) => Nerve from AxonConductive for AxonConductive -> BothNerve
 
-type NeuronDissolved = SampleVar ()
+type NeuronDissolved = MSampleVar ()
 type NeuronId = ThreadId
 
 #if !(MIN_VERSION_base(4,4,0))
-deriving instance Typeable1 SampleVar
+deriving instance Typeable1 MSampleVar
 #endif
 
 instance Show NeuronDissolved where
